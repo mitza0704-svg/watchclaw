@@ -48,6 +48,7 @@
   <div class="tabs">
     <span class="tab active" id="tab-topo" onclick="show('topo')">Topology</span>
     <span class="tab" id="tab-ep" onclick="show('ep')">Endpoints</span>
+    <span class="tab" id="tab-al" onclick="show('al')">Alerts</span>
   </div>
   <a href="/progress" style="color:#5b8cff;text-decoration:none;font-size:12px;margin-left:10px">Progress ↗</a>
   <span class="sub" id="meta">loading…</span>
@@ -57,6 +58,9 @@
 <div class="view" id="endpoints"><table id="ep-table"><thead><tr>
   <th>Health</th><th>Host</th><th>OS</th><th>CPU</th><th>RAM</th><th>Disk</th><th>Last seen</th>
 </tr></thead><tbody id="ep-body"></tbody></table></div>
+<div class="view" id="alerts-view"><table id="al-table"><thead><tr>
+  <th>Severity</th><th>Host</th><th>Type</th><th>Detail</th><th>Since</th><th>Last seen</th>
+</tr></thead><tbody id="al-body"></tbody></table></div>
 
 <div class="legend" id="legend">
   <b>Legend</b>
@@ -89,9 +93,11 @@ function show(v){
   view = v;
   document.getElementById("cy").style.display = v==="topo" ? "block" : "none";
   document.getElementById("endpoints").style.display = v==="ep" ? "block" : "none";
+  document.getElementById("alerts-view").style.display = v==="al" ? "block" : "none";
   document.getElementById("legend").style.display = v==="topo" ? "block" : "none";
   document.getElementById("tab-topo").classList.toggle("active", v==="topo");
   document.getElementById("tab-ep").classList.toggle("active", v==="ep");
+  document.getElementById("tab-al").classList.toggle("active", v==="al");
   refresh();
 }
 
@@ -142,8 +148,43 @@ async function loadTopology(){
   }
 }
 
+async function loadAlerts(){
+  const al = await (await fetch("/v1/alerts",{cache:"no-store"})).json();
+  const body = document.getElementById("al-body");
+  if (!al || !al.length){
+    body.innerHTML = '<tr><td colspan="6" style="color:#7a8596">No open alerts — all clear.</td></tr>';
+    document.getElementById("meta").textContent = "0 open alerts · "+hm();
+    return;
+  }
+  body.innerHTML = al.map(a => '<tr>'+
+    '<td><span class="badge '+a.severity+'">'+a.severity+'</span></td>'+
+    '<td class="host">'+a.hostname+'</td>'+
+    '<td style="color:#7a8596">'+a.kind+'</td>'+
+    '<td>'+a.message+(a.count>1?' <span style="color:#7a8596">×'+a.count+'</span>':'')+'</td>'+
+    '<td style="color:#7a8596">'+(a.first_seen||"").replace("T"," ").replace("Z","")+'</td>'+
+    '<td style="color:#7a8596">'+(a.last_seen||"").replace("T"," ").replace("Z","")+'</td>'+
+  '</tr>').join("");
+  document.getElementById("meta").textContent = al.length+" open alerts · "+hm();
+}
+
+// Keep the Alerts tab label live (count + color) from any view.
+async function updateAlertBadge(){
+  try {
+    const al = await (await fetch("/v1/alerts",{cache:"no-store"})).json();
+    const n = al ? al.length : 0;
+    const t = document.getElementById("tab-al");
+    t.textContent = n ? "Alerts ("+n+")" : "Alerts";
+    t.style.color = n ? (al.some(a=>a.severity==="critical")?HEALTH.critical:HEALTH.warning) : "";
+  } catch(e){ /* badge is best-effort */ }
+}
+
 async function refresh(){
-  try { view==="ep" ? await loadEndpoints() : await loadTopology(); }
+  try {
+    if (view==="ep") await loadEndpoints();
+    else if (view==="al") await loadAlerts();
+    else await loadTopology();
+    updateAlertBadge();
+  }
   catch(e){ document.getElementById("meta").textContent = "error: "+e.message; }
 }
 refresh();

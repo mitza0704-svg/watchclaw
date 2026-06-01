@@ -43,11 +43,41 @@ func health(cpu, mem, disk float64) string {
 	}
 }
 
+// metricLevel returns "critical" | "warning" | "" for one resource metric.
+// Per-metric thresholds mirror health() but let us attribute an alert to a
+// specific resource (cpu/mem/disk) instead of a blended endpoint health.
+func metricLevel(value, warn, crit float64) string {
+	switch {
+	case value >= crit:
+		return "critical"
+	case value >= warn:
+		return "warning"
+	default:
+		return ""
+	}
+}
+
+// Alert is an open or resolved condition on an endpoint. The control plane is
+// the source of tickets: an alert with status "open" is an actionable ticket.
+type Alert struct {
+	ID        int64   `json:"id"`
+	Hostname  string  `json:"hostname"`
+	Kind      string  `json:"kind"`     // cpu | mem | disk | smart | offline
+	Severity  string  `json:"severity"` // warning | critical
+	Message   string  `json:"message"`
+	Value     float64 `json:"value"`
+	Status    string  `json:"status"` // open | resolved
+	Count     int     `json:"count"`  // how many consecutive reports kept it open
+	FirstSeen string  `json:"first_seen"`
+	LastSeen  string  `json:"last_seen"`
+}
+
 type Store interface {
 	SaveReport(ctx context.Context, r model.EndpointReport) error
 	ListEndpoints(ctx context.Context) ([]EndpointSummary, error)
 	SaveScan(ctx context.Context, s model.NetworkScan) error
 	LatestScan(ctx context.Context) (*model.NetworkScan, error)
+	ListAlerts(ctx context.Context) ([]Alert, error)
 	Close() error
 }
 
@@ -90,6 +120,20 @@ CREATE TABLE IF NOT EXISTS scans (
 	payload     TEXT NOT NULL,
 	received_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS alerts (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	hostname   TEXT NOT NULL,
+	kind       TEXT NOT NULL,
+	severity   TEXT NOT NULL,
+	message    TEXT NOT NULL,
+	value      REAL,
+	status     TEXT NOT NULL DEFAULT 'open',
+	count      INTEGER NOT NULL DEFAULT 1,
+	first_seen TEXT NOT NULL,
+	last_seen  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts(status, hostname, kind);
 `)
 	if err != nil {
 		return fmt.Errorf("init schema: %w", err)
@@ -150,7 +194,89 @@ func (s *SQLiteStore) SaveReport(ctx context.Context, r model.EndpointReport) er
 	if err != nil {
 		return fmt.Errorf("insert telemetry: %w", err)
 	}
+	// Alerting is best-effort: a failure here must not lose the telemetry that
+	// was already persisted. The API logs nothing from the store, so we swallow.
+	_ = s.evaluateAlerts(ctx, r.Hostname, r.CPUUsagePct, r.MemUsagePct, maxDisk)
 	return nil
+}
+
+// evaluateAlerts raises or resolves one alert per resource metric for an
+// endpoint, based on the report just stored. An alert that stays open across
+// reports keeps its first_seen and increments count (flap-resistant).
+func (s *SQLiteStore) evaluateAlerts(ctx context.Context, hostname string, cpu, mem, disk float64) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	check := func(kind, label string, value, warn, crit float64) error {
+		lvl := metricLevel(value, warn, crit)
+		if lvl == "" {
+			return s.resolveAlert(ctx, hostname, kind, now)
+		}
+		msg := fmt.Sprintf("%s at %.1f%%", label, value)
+		return s.raiseAlert(ctx, hostname, kind, lvl, msg, value, now)
+	}
+	if err := check("cpu", "CPU usage", cpu, 90, 97); err != nil {
+		return err
+	}
+	if err := check("mem", "Memory usage", mem, 90, 97); err != nil {
+		return err
+	}
+	return check("disk", "Disk usage", disk, 85, 95)
+}
+
+// raiseAlert upserts an open alert keyed by (hostname, kind). A new condition
+// inserts; an existing open one updates severity/value and bumps count.
+func (s *SQLiteStore) raiseAlert(ctx context.Context, hostname, kind, severity, message string, value float64, now string) error {
+	var id int64
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, count FROM alerts WHERE hostname=? AND kind=? AND status='open'`,
+		hostname, kind).Scan(&id, &count)
+	if err == sql.ErrNoRows {
+		_, err = s.db.ExecContext(ctx,
+			`INSERT INTO alerts(hostname, kind, severity, message, value, status, count, first_seen, last_seen)
+			 VALUES(?, ?, ?, ?, ?, 'open', 1, ?, ?)`,
+			hostname, kind, severity, message, value, now, now)
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE alerts SET severity=?, message=?, value=?, count=?, last_seen=? WHERE id=?`,
+		severity, message, value, count+1, now, id)
+	return err
+}
+
+// resolveAlert closes any open alert for (hostname, kind) once the metric is
+// back under threshold.
+func (s *SQLiteStore) resolveAlert(ctx context.Context, hostname, kind, now string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE alerts SET status='resolved', last_seen=? WHERE hostname=? AND kind=? AND status='open'`,
+		now, hostname, kind)
+	return err
+}
+
+// ListAlerts returns open alerts (the actionable tickets), critical first.
+func (s *SQLiteStore) ListAlerts(ctx context.Context) ([]Alert, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, hostname, kind, severity, message, value, status, count, first_seen, last_seen
+FROM alerts
+WHERE status='open'
+ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END, last_seen DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query alerts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Alert
+	for rows.Next() {
+		var a Alert
+		if err := rows.Scan(&a.ID, &a.Hostname, &a.Kind, &a.Severity, &a.Message,
+			&a.Value, &a.Status, &a.Count, &a.FirstSeen, &a.LastSeen); err != nil {
+			return nil, fmt.Errorf("scan alert: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // ListEndpoints returns the latest report per hostname plus a total report count.

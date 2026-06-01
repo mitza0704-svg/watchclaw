@@ -41,6 +41,7 @@ func New(s store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("POST /v1/telemetry", h.postTelemetry)
 	mux.HandleFunc("GET /v1/endpoints", h.listEndpoints)
+	mux.HandleFunc("GET /v1/alerts", h.listAlerts)
 	mux.HandleFunc("POST /v1/discovery", h.postDiscovery)
 	mux.HandleFunc("GET /v1/topology", h.getTopology)
 	return mux
@@ -126,6 +127,19 @@ func (h *Handler) listEndpoints(w http.ResponseWriter, r *http.Request) {
 		endpoints = []store.EndpointSummary{}
 	}
 	writeJSON(w, http.StatusOK, endpoints)
+}
+
+func (h *Handler) listAlerts(w http.ResponseWriter, r *http.Request) {
+	alerts, err := h.store.ListAlerts(r.Context())
+	if err != nil {
+		h.logger.Error("list alerts failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not list alerts"})
+		return
+	}
+	if alerts == nil {
+		alerts = []store.Alert{}
+	}
+	writeJSON(w, http.StatusOK, alerts)
 }
 
 func (h *Handler) postDiscovery(w http.ResponseWriter, r *http.Request) {
