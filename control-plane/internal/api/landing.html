@@ -265,6 +265,44 @@
         }
         footer a { color: #b0b8cf; text-decoration: none; }
         footer a:hover { color: #00C46A; }
+        /* ---- modern-CSS motion layer (antigravity-grade) ---- */
+        /* cursor-tracked glow in hero — JS only syncs --mx/--my (the rest is CSS) */
+        @property --mx { syntax: '<length>'; inherits: true; initial-value: 50%; }
+        @property --my { syntax: '<length>'; inherits: true; initial-value: 30%; }
+        .hero-glow {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            background: radial-gradient(420px circle at var(--mx) var(--my),
+                color-mix(in oklab, #00C46A 16%, transparent), transparent 70%);
+            transition: background 0.18s ease-out;
+        }
+        /* entry animation on first paint */
+        @keyframes rise {
+            from { opacity: 0; transform: translateY(24px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @supports (animation-timeline: view()) {
+            @media (prefers-reduced-motion: no-preference) {
+                .hero-content > * {
+                    animation: rise 0.9s cubic-bezier(.2,.7,.2,1) both;
+                }
+                .hero h1 { animation-delay: 0.05s; }
+                .hero p  { animation-delay: 0.18s; }
+                .cta-group { animation-delay: 0.30s; }
+                @starting-style { .hero-content > * { opacity: 0; } }
+
+                /* scroll-driven reveal — each element runs on its own view() timeline */
+                .feature-card, .stat-item, .why-sovereign h2,
+                .why-sovereign > p, .final-cta h2, .final-cta .btn-primary, .final-cta > p {
+                    opacity: 0;
+                    animation: rise linear both;
+                    animation-timeline: view();
+                    animation-range: entry 0% cover 32%;
+                }
+            }
+        }
         @media (max-width: 800px) {
             .features-grid { grid-template-columns: 1fr; }
             .nav-links { display: none; }
@@ -272,9 +310,9 @@
             .stats-grid { flex-direction: column; gap: 1.8rem; }
         }
         @media (prefers-reduced-motion: reduce) {
-            #networkCanvas { display: none; }
+            #networkCanvas, .hero-glow { display: none; }
             .hero { background: radial-gradient(circle at 30% 30%, #1c1f2b, #121317); }
-            * { transition: none !important; scroll-behavior: auto !important; }
+            * { transition: none !important; scroll-behavior: auto !important; animation: none !important; }
         }
     </style>
 </head>
@@ -302,6 +340,7 @@
     <main id="main-content">
         <section class="hero" aria-label="Watchclaw hero">
             <canvas id="networkCanvas" aria-hidden="true"></canvas>
+            <div class="hero-glow" aria-hidden="true"></div>
             <div class="container hero-content">
                 <h1>Discover.<br>Protect.<span> Sovereign.</span></h1>
                 <p>Watchclaw — the EU-native RMM that maps your entire network with zero blind spots. Self-hosted, one binary, NIS2 ready.</p>
@@ -503,6 +542,18 @@
             resize();
             initNodes();
             loop();
+        })();
+
+        // cursor-tracked hero glow — the only extra JS, just syncs two custom props
+        (function() {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const hero = document.querySelector('.hero');
+            if (!hero) return;
+            hero.addEventListener('pointermove', (e) => {
+                const r = hero.getBoundingClientRect();
+                hero.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+                hero.style.setProperty('--my', (e.clientY - r.top) + 'px');
+            }, { passive: true });
         })();
     </script>
 </body>
