@@ -1,0 +1,16 @@
+# Watchclaw agent — Linux build for the collector container on zmfbot.
+# WMI inventory is Windows-only (cfg(windows) deps excluded on Linux); the agent
+# still does live metrics (sysinfo) + network discovery (ARP via /proc/net/arp)
+# + OUI vendor lookup. Runs in `loop` mode reporting to the control plane.
+
+FROM rust:1-alpine AS build
+RUN apk add --no-cache musl-dev
+WORKDIR /src
+COPY agent/ ./agent/
+WORKDIR /src/agent
+RUN cargo build --release
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates iproute2
+COPY --from=build /src/agent/target/release/watchclaw-agent /usr/local/bin/watchclaw-agent
+ENTRYPOINT ["/usr/local/bin/watchclaw-agent"]

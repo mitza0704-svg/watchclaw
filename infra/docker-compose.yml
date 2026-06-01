@@ -23,6 +23,25 @@ services:
       com.fullstackit.project: watchclaw
       com.fullstackit.isolation: "standalone — not part of openclaw-stack"
 
+  # Collector agent — runs on the host network so it can ARP-scan the real LAN.
+  # Reports to the control plane on the host's published 8787 port.
+  watchclaw-agent:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.agent
+    image: watchclaw-agent:latest
+    container_name: watchclaw-agent
+    restart: unless-stopped
+    network_mode: host          # needed for ARP/LAN discovery of the real network
+    command: ["loop"]
+    environment:
+      - WATCHCLAW_URL=http://localhost:8787
+      - WATCHCLAW_INTERVAL=30
+    depends_on:
+      - watchclaw-cp
+    labels:
+      com.fullstackit.project: watchclaw
+
 networks:
   watchclaw-net:
     name: watchclaw-net          # dedicated bridge, isolated from OpenClaw networks
