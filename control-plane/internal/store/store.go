@@ -24,8 +24,23 @@ type EndpointSummary struct {
 	OSVersion   string  `json:"os_version"`
 	CPUUsagePct float64 `json:"cpu_usage_pct"`
 	MemUsagePct float64 `json:"mem_usage_pct"`
-	LastSeen    string  `json:"last_seen"`
-	ReportCount int     `json:"report_count"`
+	DiskUsagePct float64 `json:"disk_usage_pct"`
+	// Health is derived from thresholds: ok | warning | critical.
+	Health   string `json:"health"`
+	LastSeen string `json:"last_seen"`
+	ReportCount int `json:"report_count"`
+}
+
+// health derives an alert level from resource thresholds.
+func health(cpu, mem, disk float64) string {
+	switch {
+	case disk >= 95 || cpu >= 97 || mem >= 97:
+		return "critical"
+	case disk >= 85 || cpu >= 90 || mem >= 90:
+		return "warning"
+	default:
+		return "ok"
+	}
 }
 
 type Store interface {
@@ -60,6 +75,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
 	os_version    TEXT,
 	cpu_usage_pct REAL,
 	mem_usage_pct REAL,
+	disk_usage_pct REAL,
 	payload       TEXT NOT NULL,
 	collected_at  TEXT NOT NULL,
 	received_at   TEXT NOT NULL
@@ -119,10 +135,16 @@ func (s *SQLiteStore) SaveReport(ctx context.Context, r model.EndpointReport) er
 	if err != nil {
 		return fmt.Errorf("marshal report: %w", err)
 	}
+	var maxDisk float64
+	for _, d := range r.Disks {
+		if d.UsagePct > maxDisk {
+			maxDisk = d.UsagePct
+		}
+	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO telemetry(hostname, os, os_version, cpu_usage_pct, mem_usage_pct, payload, collected_at, received_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Hostname, r.OS, r.OSVersion, r.CPUUsagePct, r.MemUsagePct,
+		`INSERT INTO telemetry(hostname, os, os_version, cpu_usage_pct, mem_usage_pct, disk_usage_pct, payload, collected_at, received_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Hostname, r.OS, r.OSVersion, r.CPUUsagePct, r.MemUsagePct, maxDisk,
 		string(payload), r.CollectedAt, time.Now().UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -134,7 +156,7 @@ func (s *SQLiteStore) SaveReport(ctx context.Context, r model.EndpointReport) er
 // ListEndpoints returns the latest report per hostname plus a total report count.
 func (s *SQLiteStore) ListEndpoints(ctx context.Context) ([]EndpointSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT t.hostname, t.os, t.os_version, t.cpu_usage_pct, t.mem_usage_pct, t.received_at, c.cnt
+SELECT t.hostname, t.os, t.os_version, t.cpu_usage_pct, t.mem_usage_pct, t.disk_usage_pct, t.received_at, c.cnt
 FROM telemetry t
 JOIN (
 	SELECT hostname, MAX(id) AS max_id, COUNT(*) AS cnt
@@ -149,9 +171,12 @@ ORDER BY t.hostname`)
 	var out []EndpointSummary
 	for rows.Next() {
 		var e EndpointSummary
-		if err := rows.Scan(&e.Hostname, &e.OS, &e.OSVersion, &e.CPUUsagePct, &e.MemUsagePct, &e.LastSeen, &e.ReportCount); err != nil {
+		var disk sql.NullFloat64
+		if err := rows.Scan(&e.Hostname, &e.OS, &e.OSVersion, &e.CPUUsagePct, &e.MemUsagePct, &disk, &e.LastSeen, &e.ReportCount); err != nil {
 			return nil, fmt.Errorf("scan endpoint: %w", err)
 		}
+		e.DiskUsagePct = disk.Float64
+		e.Health = health(e.CPUUsagePct, e.MemUsagePct, e.DiskUsagePct)
 		out = append(out, e)
 	}
 	return out, rows.Err()
