@@ -103,6 +103,13 @@ pub fn scan() -> NetworkScan {
                 d.hostname = m.hostname.clone();
             }
         }
+
+        // Last: fold the (now-final) hostname into the class. Only upgrades the
+        // generic "device" or promotes workstation->server; never overrides a
+        // port-proven class. Catches WIN-* servers, UDM gateways, NAS, etc.
+        if !d.hostname.is_empty() {
+            d.device_type = crate::fingerprint::refine_with_hostname(&d.device_type, &d.hostname);
+        }
     }
 
     NetworkScan {
