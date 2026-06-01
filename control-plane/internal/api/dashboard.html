@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="theme-color" content="#0a0c10" />
+<title>Watchclaw — Network Topology</title>
+<script src="/cytoscape.min.js"></script>
+<style>
+  :root { --bg:#0a0c10; --panel:#12161d; --line:#1e2530; --txt:#e6eaf0; --muted:#7a8596; --accent:#3dd68c; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; overflow:hidden; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); }
+  header .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent); flex:0 0 auto; }
+  header h1 { font-size:14px; font-weight:600; margin:0; letter-spacing:.2px; white-space:nowrap; }
+  header .sub { color:var(--muted); font-size:12px; margin-left:auto; text-align:right; }
+  #cy { width:100%; height:calc(100vh - 52px); touch-action:none; }
+  .legend { position:fixed; bottom:14px; left:14px; background:rgba(18,22,29,.92); border:1px solid var(--line);
+    border-radius:10px; padding:10px 12px; font-size:11px; color:var(--muted); backdrop-filter:blur(8px); }
+  .legend b { color:var(--txt); font-weight:600; display:block; margin-bottom:6px; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; margin-right:12px; }
+  .legend i { width:9px; height:9px; border-radius:3px; display:inline-block; }
+  @media (max-width:640px) {
+    header h1 { font-size:13px; }
+    header .sub { font-size:11px; }
+    .legend { font-size:10px; padding:8px 10px; left:10px; bottom:10px; right:10px; }
+    .legend span { margin-right:8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>Watchclaw</h1>
+  <a href="/progress" style="color:#5b8cff;text-decoration:none;font-size:12px;margin-left:14px">Progress ↗</a>
+  <span class="sub" id="meta">loading…</span>
+</header>
+<div id="cy"></div>
+<div class="legend">
+  <b>Legend</b>
+  <span><i style="background:#5b8cff"></i>Internet</span>
+  <span><i style="background:#f0a23d"></i>Gateway</span>
+  <span><i style="background:#3dd6c4"></i>Endpoint</span>
+  <span><i style="background:#f0d23d"></i>Printer</span>
+  <span><i style="background:#8a93a5"></i>Device</span>
+</div>
+<script>
+const COLORS = { internet:"#5b8cff", gateway:"#f0a23d", endpoint:"#3dd6c4", printer:"#f0d23d", device:"#8a93a5" };
+let cy = null;
+
+function pad(n){ return String(n).padStart(2,"0"); }
+function nowHM(){ const d=new Date(); return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds()); }
+
+async function refresh() {
+  try {
+    const g = await (await fetch("/v1/topology", {cache:"no-store"})).json();
+    document.getElementById("meta").textContent =
+      (g.subnet||"—") + " · " + (g.nodes?.length||0) + " nodes · " + nowHM();
+    const elements = [
+      ...(g.nodes||[]).map(n => ({ data:{ id:n.id, label:n.label, type:n.type }})),
+      ...(g.edges||[]).map(e => ({ data:{ source:e.from, target:e.to, etype:e.type }})),
+    ];
+    if (!cy) {
+      cy = cytoscape({
+        container: document.getElementById("cy"),
+        elements,
+        style: [
+          { selector:"node", style:{
+              "background-color": ele => COLORS[ele.data("type")] || COLORS.device,
+              "label":"data(label)", "color":"#e6eaf0", "font-size":"11px",
+              "text-valign":"bottom", "text-margin-y":"6px", "width":"34px", "height":"34px",
+              "border-width":"2px", "border-color":"#0a0c10" }},
+          { selector:'node[type="internet"]', style:{ "width":"46px","height":"46px" }},
+          { selector:'node[type="gateway"]',  style:{ "width":"42px","height":"42px" }},
+          { selector:"edge", style:{ "width":1.5, "line-color":"#2a3340", "curve-style":"straight", "opacity":0.7 }},
+          { selector:'edge[etype="wan"]', style:{ "line-color":"#5b8cff","width":2.5 }},
+        ],
+        layout: { name:"breadthfirst", roots:"#internet", directed:true, spacingFactor:1.5, padding:30 },
+      });
+    } else {
+      cy.json({ elements });
+      cy.layout({ name:"breadthfirst", roots:"#internet", directed:true, spacingFactor:1.5, padding:30 }).run();
+    }
+  } catch (e) {
+    document.getElementById("meta").textContent = "error: " + e.message;
+  }
+}
+refresh();
+setInterval(refresh, 10000); // auto-refresh every 10s — watch progress live
+</script>
+</body>
+</html>

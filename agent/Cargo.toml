@@ -1,0 +1,31 @@
+[package]
+name = "watchclaw-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Watchclaw RMM endpoint agent — collects OS telemetry, secure store-and-forward to control plane."
+license = "Proprietary"
+
+[dependencies]
+sysinfo = "0.33"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+ureq = { version = "2", features = ["json", "tls"] }
+if-addrs = "0.13"   # enumerate local interfaces to derive the subnet to scan
+rayon = "1"         # parallel host probing across the subnet
+netdev = "0.31"     # real default gateway from the routing table (not guessed)
+dns-lookup = "2"    # best-effort reverse-DNS hostname resolution
+
+# Deep hardware inventory via WMI is Windows-only; Linux/macOS get native
+# collectors later (dmidecode/udev, ioreg). Gated so the agent still builds
+# cross-platform.
+[target.'cfg(windows)'.dependencies]
+wmi = "0.15"
+winreg = "0.52"   # read installed-software list from the Uninstall registry hive
+
+[profile.release]
+opt-level = "z"     # optimize for small binary — agent ships to thousands of endpoints
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

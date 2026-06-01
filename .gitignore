@@ -1,0 +1,8 @@
+# build artifacts
+agent/target/
+control-plane/watchclaw-cp
+control-plane/watchclaw-cp-linux
+control-plane/watchclaw-cp.exe
+*.db
+*.exe
+# keep embedded assets: manuf.txt, cytoscape.min.js, dashboard.html
