@@ -1,236 +1,509 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#121317" />
-<title>Watchclaw — Sovereign RMM for Europe</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,400..700&family=Google+Sans+Code:wght@400..600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    /* Antigravity palette (real, from their CSS) */
-    --bg:#121317; --panel:#18191d; --panel2:#1f2024; --line:#2a2c31;
-    --txt:#f8f9fc; --muted:#b2bbc5; --faint:#7f8794;
-    --accent:#00c46a;        /* Watchclaw brand green */
-    --blue:#3279f9;          /* Antigravity blue accent */
-    --display:"Google Sans Flex",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
-  body{background:var(--bg);color:var(--txt);
-    font:16px/1.6 var(--display);
-    -webkit-font-smoothing:antialiased;overflow-x:hidden;letter-spacing:-.01em}
-  a{color:inherit;text-decoration:none}
-  .wrap{max-width:1100px;margin:0 auto;padding:0 32px}
-  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
-  .skip-link{position:absolute;top:-100%;left:16px;background:var(--accent);color:#04130b;font-weight:600;padding:8px 16px;border-radius:6px;z-index:200}
-  .skip-link:focus{top:16px}
-
-  nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(16px);
-    background:rgba(5,5,5,.55);border-bottom:1px solid transparent;transition:border-color .3s}
-  nav.scrolled{border-color:var(--line)}
-  nav .wrap{display:flex;align-items:center;height:64px;gap:16px}
-  .logo{display:flex;align-items:center;gap:9px;font-weight:600}
-  .logo svg{color:var(--accent)}
-  nav .links{margin-left:auto;display:flex;gap:28px;align-items:center;color:var(--muted);font-size:14px}
-  nav .links a:hover{color:var(--txt)}
-  .btn{background:var(--txt);color:#050505;font-weight:600;font-size:14px;padding:10px 20px;border-radius:100px;transition:transform .2s,opacity .2s}
-  .btn:hover{transform:translateY(-1px);opacity:.9}
-  .btn.accent{background:var(--accent);color:#04130b}
-  .btn.ghost{background:transparent;color:var(--txt);border:1px solid #2a2a2e}
-
-  /* hero with anti-gravity network canvas */
-  .hero{position:relative;height:100vh;min-height:660px;display:flex;align-items:center;overflow:hidden}
-  #field{position:absolute;inset:0;z-index:0;display:block}
-  .hero .wrap{position:relative;z-index:2;pointer-events:none}
-  .hero .wrap a,.hero .wrap .eyebrow{pointer-events:auto}
-  .vignette{position:absolute;inset:0;z-index:1;pointer-events:none;
-    background:radial-gradient(60% 60% at 50% 45%,transparent,rgba(5,5,5,.55) 80%,var(--bg))}
-  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
-    border:1px solid var(--line);border-radius:100px;padding:7px 15px;margin-bottom:30px;background:rgba(255,255,255,.03)}
-  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
-  h1{font-size:clamp(44px,8vw,96px);line-height:.98;letter-spacing:-.04em;font-weight:600;max-width:15ch}
-  .sub{margin-top:28px;font-size:clamp(17px,2.2vw,21px);color:var(--muted);max-width:52ch;line-height:1.5}
-  .cta{margin-top:40px;display:flex;gap:14px;flex-wrap:wrap}
-  .scroll-cue{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);z-index:2;
-    color:var(--faint);font-size:11px;letter-spacing:.22em;text-transform:uppercase}
-
-  .js .reveal{opacity:0;transform:translateY(24px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
-  .js .reveal.in{opacity:1;transform:none}
-
-  section{padding:130px 0;position:relative}
-  .kicker{display:block;color:var(--accent);font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;margin-bottom:14px}
-  h2{font-size:clamp(30px,4.6vw,52px);letter-spacing:-.03em;line-height:1.04;font-weight:600;max-width:16ch}
-  .lead{color:var(--muted);margin-top:20px;font-size:18px;max-width:58ch;line-height:1.5}
-
-  .rows{margin-top:64px;border-top:1px solid var(--line)}
-  .row{display:grid;grid-template-columns:46px 1fr;gap:24px;padding:34px 0;border-bottom:1px solid var(--line);
-    align-items:start;transition:padding-left .35s}
-  .row:hover{padding-left:10px}
-  .row .ic{color:var(--accent)}
-  .row h3{font-size:21px;font-weight:600;letter-spacing:-.02em}
-  .row p{color:var(--muted);margin-top:8px;font-size:15.5px;max-width:64ch}
-
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:60px}
-  .stat .n{font-size:clamp(34px,5.5vw,60px);font-weight:600;letter-spacing:-.04em;line-height:1}
-  .stat .l{color:var(--faint);font-size:13px;margin-top:10px;letter-spacing:.04em}
-
-  .final{text-align:center}
-  .final h2{margin:0 auto;max-width:18ch}
-  .final .lead{margin:20px auto 0}
-  .final .cta{justify-content:center}
-  footer{padding:44px 0;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
-  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
-
-  @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr);gap:36px}nav .links a:not(.btn){display:none}}
-  @media (prefers-reduced-motion: reduce){
-    .js .reveal{opacity:1;transform:none;transition:none}
-    html{scroll-behavior:auto}.btn:hover{transform:none}.row:hover{padding-left:0}
-    #field{display:none}
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Watchclaw — sovereign RMM for Europe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght,GRAD,XTRA@8..144,300..700,0..200,100..500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: #121317;
+            color: #eef0f6;
+            font-family: 'Google Sans Flex', system-ui, -apple-system, sans-serif;
+            font-weight: 350;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 1rem;
+            background: #00C46A;
+            color: #121317;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0 0 8px 8px;
+            font-weight: 500;
+            z-index: 9999;
+            text-decoration: none;
+            transition: top 0.2s;
+        }
+        .skip-link:focus { top: 0; }
+        :focus-visible {
+            outline: 2px solid #00C46A;
+            outline-offset: 4px;
+            border-radius: 4px;
+        }
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(18, 19, 23, 0.82);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            z-index: 500;
+            padding: 0.8rem 0;
+        }
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            font-weight: 600;
+            font-size: 1.5rem;
+            letter-spacing: -0.02em;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+        }
+        .logo svg { width: 28px; height: 28px; color: #00C46A; }
+        .nav-links {
+            display: flex;
+            gap: 2.5rem;
+            font-weight: 400;
+            font-size: 0.95rem;
+            letter-spacing: 0.01em;
+        }
+        .nav-links a {
+            color: #b0b8cf;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: white; }
+        .btn-dashboard {
+            background: #00C46A;
+            color: #121317;
+            padding: 0.5rem 1.6rem;
+            border-radius: 40px;
+            font-weight: 550;
+            font-size: 0.9rem;
+            letter-spacing: 0.01em;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-dashboard:hover { background: #2cdb84; transform: scale(0.97); }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding: 8rem 0 6rem;
+        }
+        #networkCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            pointer-events: none;
+        }
+        .hero-content {
+            position: relative;
+            z-index: 10;
+            max-width: 820px;
+        }
+        .hero h1 {
+            font-size: clamp(3.6rem, 12vw, 7rem);
+            font-weight: 500;
+            letter-spacing: -0.04em;
+            line-height: 1.02;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #f0f4ff 0%, #b0c8ff 80%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .hero h1 span { color: #00C46A; background: none; -webkit-background-clip: unset; background-clip: unset; }
+        .hero p {
+            font-size: 1.3rem;
+            color: #b0b8cf;
+            max-width: 640px;
+            margin-bottom: 2.5rem;
+            font-weight: 350;
+            letter-spacing: -0.01em;
+        }
+        .cta-group {
+            display: flex;
+            gap: 1.2rem;
+            flex-wrap: wrap;
+        }
+        .btn-primary {
+            background: #00C46A;
+            color: #121317;
+            padding: 0.9rem 2.8rem;
+            border-radius: 60px;
+            font-weight: 550;
+            font-size: 1.1rem;
+            letter-spacing: -0.01em;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .btn-primary:hover { background: #2cdb84; transform: scale(0.97); }
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: white;
+            padding: 0.9rem 2.8rem;
+            border-radius: 60px;
+            font-weight: 400;
+            font-size: 1.1rem;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+        .btn-secondary:hover { border-color: #00C46A; color: #00C46A; }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2.5rem;
+            margin: 6rem 0;
+        }
+        .feature-card {
+            background: #1a1c24;
+            border-radius: 32px;
+            padding: 2.8rem 2.2rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: all 0.25s;
+        }
+        .feature-card:hover { background: #1e212a; border-color: rgba(0, 196, 106, 0.2); }
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            color: #00C46A;
+            margin-bottom: 1.4rem;
+        }
+        .feature-card h3 {
+            font-size: 1.6rem;
+            font-weight: 450;
+            letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+            color: white;
+        }
+        .feature-card p {
+            color: #9aa2b8;
+            font-size: 1rem;
+            font-weight: 350;
+        }
+        .stats-section {
+            padding: 5rem 0;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .stats-grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 2rem;
+        }
+        .stat-item { flex: 1 0 160px; }
+        .stat-number {
+            font-size: 3.2rem;
+            font-weight: 480;
+            letter-spacing: -0.03em;
+            color: white;
+            line-height: 1.1;
+        }
+        .stat-label {
+            color: #8a92a8;
+            font-size: 1rem;
+            font-weight: 350;
+            border-left: 2px solid #00C46A;
+            padding-left: 0.8rem;
+            margin-top: 0.3rem;
+        }
+        .why-sovereign { padding: 5rem 0 3rem; }
+        .why-sovereign h2 {
+            font-size: 3rem;
+            font-weight: 450;
+            letter-spacing: -0.03em;
+            margin-bottom: 2rem;
+        }
+        .why-sovereign h2 span { color: #00C46A; }
+        .final-cta {
+            text-align: center;
+            padding: 7rem 0 5rem;
+        }
+        .final-cta h2 {
+            font-size: 3.4rem;
+            font-weight: 450;
+            letter-spacing: -0.03em;
+            margin-bottom: 1.5rem;
+        }
+        .final-cta .btn-primary {
+            font-size: 1.3rem;
+            padding: 1rem 3.6rem;
+        }
+        footer {
+            padding: 2.5rem 0;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            color: #6a728a;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        footer a { color: #b0b8cf; text-decoration: none; }
+        footer a:hover { color: #00C46A; }
+        @media (max-width: 800px) {
+            .features-grid { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
+            .hero h1 { font-size: 3.2rem; }
+            .stats-grid { flex-direction: column; gap: 1.8rem; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #networkCanvas { display: none; }
+            .hero { background: radial-gradient(circle at 30% 30%, #1c1f2b, #121317); }
+            * { transition: none !important; scroll-behavior: auto !important; }
+        }
+    </style>
 </head>
 <body>
-<a class="skip-link" href="#main">Skip to main content</a>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
 
-<nav id="nav" aria-label="Primary"><div class="wrap">
-  <a class="logo" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 22 20H2z" opacity=".9"/><circle cx="12" cy="14.6" r="2.3" fill="#050505"/></svg>Watchclaw</a>
-  <div class="links">
-    <a href="#features">Platform</a>
-    <a href="#moat">Why sovereign</a>
-    <a class="btn ghost" href="/app">Open dashboard</a>
-  </div>
-</div></nav>
+    <nav role="navigation" aria-label="Main navigation">
+        <div class="container">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/>
+                    <path d="M9 11.5 11 13.5 15.5 9"/>
+                </svg>
+                Watchclaw
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#sovereign">Sovereign</a>
+                <a href="#cta">Get started</a>
+            </div>
+            <a href="/app" class="btn-dashboard" aria-label="Open dashboard">Open dashboard</a>
+        </div>
+    </nav>
 
-<main id="main">
-<header class="hero">
-  <canvas id="field" aria-hidden="true"></canvas>
-  <div class="vignette"></div>
-  <div class="wrap">
-    <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Sovereign RMM · built in the EU</span>
-    <h1>Every device. One living map.</h1>
-    <p class="sub">Watchclaw discovers, identifies and monitors your whole network — endpoints, printers, NAS, cameras, IoT — with an AI-native agent. Self-hosted. EU-sovereign. No US cloud.</p>
-    <div class="cta">
-      <a class="btn accent" href="/app">Open live dashboard</a>
-      <a class="btn ghost" href="#features">See how it works</a>
-    </div>
-  </div>
-  <div class="scroll-cue" aria-hidden="true">scroll</div>
-</header>
+    <main id="main-content">
+        <section class="hero" aria-label="Watchclaw hero">
+            <canvas id="networkCanvas" aria-hidden="true"></canvas>
+            <div class="container hero-content">
+                <h1>Discover.<br>Protect.<span> Sovereign.</span></h1>
+                <p>Watchclaw — the EU-native RMM that maps your entire network with zero blind spots. Self-hosted, one binary, NIS2 ready.</p>
+                <div class="cta-group">
+                    <a href="/app" class="btn-primary">Deploy now</a>
+                    <a href="#features" class="btn-secondary">Explore discovery</a>
+                </div>
+            </div>
+        </section>
 
-<section id="features">
-  <div class="wrap">
-    <div class="reveal"><h2><span class="kicker">The platform</span>One agent. The whole picture.</h2>
-    <p class="lead">A single lightweight agent maps your network and keeps every machine healthy — no fleet of disconnected tools.</p></div>
-    <div class="rows">
-      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4.9 16.1a9 9 0 0 1 0-8.2M7.8 13.2a5 5 0 0 1 0-2.4M19.1 7.9a9 9 0 0 1 0 8.2M16.2 10.8a5 5 0 0 1 0 2.4"/><circle cx="12" cy="12" r="2"/></svg></span><div><h3>Auto-discovery</h3><p>ARP, mDNS, SSDP and SNMP fuse into one live topology. Devices fingerprinted by port + vendor → router, printer, NAS, camera, IoT, phone.</p></div></div>
-      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span><div><h3>AI-native</h3><p>An LLM copilot summarises tickets, drafts scripts and answers in plain language. Every autonomous action passes a risk gate first.</p></div></div>
-      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></span><div><h3>EU-sovereign</h3><p>Your data never leaves your region. No US CLOUD Act exposure — built for NIS2 and the regulated SMB that incumbents serve poorly.</p></div></div>
-      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg></span><div><h3>Self-hosted</h3><p>One Rust agent + one Go control plane, in a container on your own server. Open-core, no lock-in, predictable pricing.</p></div></div>
-    </div>
-  </div>
-</section>
+        <section id="features" class="container features-grid">
+            <div class="feature-card">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="2.2"/>
+                    <path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22M5 5l2.5 2.5M16.5 16.5 19 19M19 5l-2.5 2.5M7.5 16.5 5 19"/>
+                </svg>
+                <h3>Auto-discovery</h3>
+                <p>ARP, mDNS, SSDP, SNMP — four layers, zero config. Instantly map every device, VM, and container in your fleet.</p>
+            </div>
+            <div class="feature-card">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3l1.8 4.4L18 9l-4.2 1.6L12 15l-1.8-4.4L6 9l4.2-1.6L12 3Z"/>
+                    <path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z"/>
+                </svg>
+                <h3>AI-native copilot</h3>
+                <p>Context-aware assistant that interprets network topology, suggests mitigations, and automates routine tasks.</p>
+            </div>
+            <div class="feature-card">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/>
+                    <circle cx="12" cy="10.5" r="3.2"/>
+                </svg>
+                <h3>EU-sovereign · NIS2</h3>
+                <p>No US CLOUD Act reach. Hosted on your infrastructure, compliant with European data protection and the NIS2 directive.</p>
+            </div>
+            <div class="feature-card">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z"/>
+                    <path d="M12 2v20M21 7l-9 5-9-5"/>
+                </svg>
+                <h3>Self-hosted one-binary</h3>
+                <p>Single statically linked binary, under 35 MB agent. Deploy on any Linux, no dependencies, no bloat.</p>
+            </div>
+        </section>
 
-<section id="moat">
-  <div class="wrap">
-    <div class="reveal"><h2><span class="kicker">Why it wins</span>The moat is sovereignty, not features.</h2>
-    <p class="lead">NIS2 makes you accountable for your whole supply chain. US-headquartered RMMs can't escape the CLOUD Act. Watchclaw can — it runs on your infrastructure, in your jurisdiction.</p></div>
-    <div class="stats">
-      <div class="stat reveal"><div class="n">57k</div><div class="l">IEEE vendor IDs</div></div>
-      <div class="stat reveal"><div class="n">4</div><div class="l">discovery layers</div></div>
-      <div class="stat reveal"><div class="n">&lt;35MB</div><div class="l">agent footprint</div></div>
-      <div class="stat reveal"><div class="n">100%</div><div class="l">self-hosted</div></div>
-    </div>
-  </div>
-</section>
+        <section id="sovereign" class="why-sovereign container">
+            <h2>Why <span>sovereign</span> infrastructure?</h2>
+            <div class="stats-section" style="border:0; padding: 1rem 0 0;">
+                <div class="stats-grid">
+                    <div class="stat-item"><div class="stat-number">57k+</div><div class="stat-label">IEEE vendor IDs</div></div>
+                    <div class="stat-item"><div class="stat-number">4</div><div class="stat-label">discovery layers (ARP/mDNS/SSDP/SNMP)</div></div>
+                    <div class="stat-item"><div class="stat-number">&lt;35 MB</div><div class="stat-label">agent footprint</div></div>
+                    <div class="stat-item"><div class="stat-number">100%</div><div class="stat-label">self-hosted &amp; air-gapped</div></div>
+                </div>
+            </div>
+            <p style="margin-top: 2.5rem; color: #9aa2b8; max-width: 700px; font-size: 1.1rem;">No third-party egress, no US cloud. Your network graph stays yours. Built for European critical infrastructure.</p>
+        </section>
 
-<section class="final" aria-label="Get started">
-  <div class="wrap reveal">
-    <h2><span class="kicker">Live now</span>Your network, mapped in real time.</h2>
-    <p class="lead">The dashboard is running. Open it and watch the topology build itself.</p>
-    <div class="cta"><a class="btn accent" href="/app">Open dashboard</a></div>
-  </div>
-</section>
-</main>
+        <section id="cta" class="final-cta container">
+            <h2>Own your network.<br>Deploy <span style="color:#00C46A;">Watchclaw</span>.</h2>
+            <a href="/app" class="btn-primary">Get started
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+            <p style="margin-top: 1.8rem; color: #6a728a;">Single binary · sovereign by design · zero vendor lock-in</p>
+        </section>
+    </main>
 
-<footer><div class="wrap">
-  <span>Watchclaw — FullStackIT SRL · Sovereign RMM for Europe</span>
-  <span>Self-hosted · Open-core · EU-first</span>
-</div></footer>
+    <footer class="container">
+        <span>© 2026 Watchclaw — EU sovereign RMM</span>
+        <span><a href="#">Documentation</a> · <a href="#">Privacy</a> · <a href="#">NIS2</a></span>
+    </footer>
 
-<script>
-  document.documentElement.classList.add('js');
-  const nav=document.getElementById('nav');
-  addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>20),{passive:true});
-  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.15});
-  document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%4*70)+'ms';io.observe(el)});
+    <script>
+        (function() {
+            const canvas = document.getElementById('networkCanvas');
+            if (!canvas) return;
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                canvas.style.display = 'none';
+                return;
+            }
+            const ctx = canvas.getContext('2d');
+            let width, height;
+            let nodes = [];
+            let mouse = { x: -10000, y: -10000 };
+            const NODE_COUNT = 46;
+            const EDGE_DIST = 150;
+            const REPEL_RADIUS = 110;
+            const REPEL_STRENGTH = 0.6;
 
-  /* ---- anti-gravity network field (Antigravity-style: float + mouse) ---- */
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const cv = document.getElementById('field');
-  if (cv && !reduce) {
-    const ctx = cv.getContext('2d');
-    let W,H,DPR,nodes=[];
-    const mouse={x:-9999,y:-9999,active:false};
-    function resize(){
-      DPR=Math.min(devicePixelRatio||1,2);
-      W=cv.clientWidth=cv.offsetParent?cv.parentElement.clientWidth:innerWidth;
-      H=cv.clientHeight=cv.parentElement.clientHeight;
-      cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
-      const count=Math.round(Math.min(96,Math.max(46,W*H/16000)));
-      nodes=Array.from({length:count},()=>({
-        x:Math.random()*W,y:Math.random()*H,
-        vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,
-        r:Math.random()*1.6+1.1
-      }));
-    }
-    addEventListener('resize',resize);
-    cv.parentElement.addEventListener('pointermove',e=>{const b=cv.getBoundingClientRect();mouse.x=e.clientX-b.left;mouse.y=e.clientY-b.top;mouse.active=true;});
-    cv.parentElement.addEventListener('pointerleave',()=>mouse.active=false);
-    resize();
-    const LINK=132, REPEL=128;
-    function frame(){
-      ctx.clearRect(0,0,W,H);
-      for(const n of nodes){
-        // zero-g drift
-        n.x+=n.vx; n.y+=n.vy;
-        // gentle random wander
-        n.vx+=(Math.random()-.5)*.012; n.vy+=(Math.random()-.5)*.012;
-        // mouse anti-gravity repulsion
-        if(mouse.active){
-          const dx=n.x-mouse.x, dy=n.y-mouse.y, d=Math.hypot(dx,dy);
-          if(d<REPEL && d>0){const f=(1-d/REPEL)*1.4; n.vx+=dx/d*f*.12; n.vy+=dy/d*f*.12;}
-        }
-        // damping + soft speed cap
-        n.vx*=.975; n.vy*=.975;
-        const sp=Math.hypot(n.vx,n.vy), max=.9;
-        if(sp>max){n.vx*=max/sp;n.vy*=max/sp;}
-        // wrap edges
-        if(n.x<-20)n.x=W+20; if(n.x>W+20)n.x=-20;
-        if(n.y<-20)n.y=H+20; if(n.y>H+20)n.y=-20;
-      }
-      // links
-      for(let i=0;i<nodes.length;i++){
-        for(let j=i+1;j<nodes.length;j++){
-          const a=nodes[i],b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy);
-          if(d<LINK){
-            const o=(1-d/LINK)*.5;
-            ctx.strokeStyle='rgba(0,196,106,'+o*0.55+')';
-            ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-          }
-        }
-      }
-      // nodes
-      for(const n of nodes){
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,7);
-        ctx.fillStyle='rgba(255,255,255,.82)';ctx.fill();
-      }
-      requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-</script>
+            function initNodes() {
+                nodes = [];
+                for (let i = 0; i < NODE_COUNT; i++) {
+                    nodes.push({
+                        x: Math.random() * width,
+                        y: Math.random() * height,
+                        vx: (Math.random() - 0.5) * 0.3,
+                        vy: (Math.random() - 0.5) * 0.3,
+                        r: 2.5 + Math.random() * 3,
+                    });
+                }
+            }
+
+            function resize() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                width = canvas.width = rect.width || window.innerWidth;
+                height = canvas.height = rect.height || window.innerHeight;
+                if (nodes.length === 0) initNodes();
+            }
+
+            function update() {
+                const w = width, h = height;
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    const dx = n.x - mouse.x;
+                    const dy = n.y - mouse.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < REPEL_RADIUS && dist > 0.1) {
+                        const force = (REPEL_RADIUS - dist) / REPEL_RADIUS * REPEL_STRENGTH;
+                        n.vx += (dx / dist) * force;
+                        n.vy += (dy / dist) * force;
+                    }
+                    n.vx += (Math.random() - 0.5) * 0.04;
+                    n.vy += (Math.random() - 0.5) * 0.04;
+                    n.vx *= 0.98;
+                    n.vy *= 0.98;
+                    n.x += n.vx;
+                    n.y += n.vy;
+                    if (n.x < -20) n.x = w + 20;
+                    if (n.x > w + 20) n.x = -20;
+                    if (n.y < -20) n.y = h + 20;
+                    if (n.y > h + 20) n.y = -20;
+                    n.x = Math.min(w + 20, Math.max(-20, n.x));
+                    n.y = Math.min(h + 20, Math.max(-20, n.y));
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, width, height);
+                ctx.lineWidth = 0.7;
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = i + 1; j < nodes.length; j++) {
+                        const a = nodes[i], b = nodes[j];
+                        const dx = a.x - b.x, dy = a.y - b.y;
+                        const d = Math.hypot(dx, dy);
+                        if (d < EDGE_DIST) {
+                            const alpha = (1 - d / EDGE_DIST) * 0.5;
+                            ctx.strokeStyle = `rgba(50, 121, 249, ${alpha})`;
+                            ctx.beginPath();
+                            ctx.moveTo(a.x, a.y);
+                            ctx.lineTo(b.x, b.y);
+                            ctx.stroke();
+                        }
+                    }
+                }
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    const gradient = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 3);
+                    gradient.addColorStop(0, `rgba(0, 196, 106, 0.9)`);
+                    gradient.addColorStop(0.6, `rgba(0, 196, 106, 0.2)`);
+                    gradient.addColorStop(1, `rgba(0, 196, 106, 0)`);
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.r * 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#00C46A';
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.r * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                    ctx.beginPath();
+                    ctx.arc(n.x - 1, n.y - 1, n.r * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function loop() {
+                update();
+                draw();
+                requestAnimationFrame(loop);
+            }
+
+            function onMouseMove(e) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                mouse.x = (e.clientX - rect.left) * scaleX;
+                mouse.y = (e.clientY - rect.top) * scaleY;
+            }
+
+            function onMouseLeave() {
+                mouse.x = -10000;
+                mouse.y = -10000;
+            }
+
+            window.addEventListener('resize', resize);
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('mouseleave', onMouseLeave);
+
+            resize();
+            initNodes();
+            loop();
+        })();
+    </script>
 </body>
 </html>
