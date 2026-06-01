@@ -113,6 +113,7 @@
             display: block;
             pointer-events: none;
         }
+        .hero > .container { width: 100%; }
         .hero-content {
             position: relative;
             z-index: 10;
@@ -176,7 +177,7 @@
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 2.5rem;
-            margin: 6rem 0;
+            margin: 6rem auto;
         }
         .feature-card {
             background: #1a1c24;
@@ -341,14 +342,14 @@
         <section class="hero" aria-label="Watchclaw hero">
             <canvas id="networkCanvas" aria-hidden="true"></canvas>
             <div class="hero-glow" aria-hidden="true"></div>
-            <div class="container hero-content">
+            <div class="container"><div class="hero-content">
                 <h1>Discover.<br>Protect.<span> Sovereign.</span></h1>
                 <p>Watchclaw — the EU-native RMM that maps your entire network with zero blind spots. Self-hosted, one binary, NIS2 ready.</p>
                 <div class="cta-group">
                     <a href="/app" class="btn-primary">Deploy now</a>
                     <a href="#features" class="btn-secondary">Explore discovery</a>
                 </div>
-            </div>
+            </div></div>
         </section>
 
         <section id="features" class="container features-grid">
