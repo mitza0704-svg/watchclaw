@@ -3,109 +3,86 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#06070a" />
+<meta name="theme-color" content="#050505" />
 <title>Watchclaw — Sovereign RMM for Europe</title>
 <style>
   :root{
-    --bg:#06070a; --bg2:#0b0e14; --panel:#11151d; --line:#1b2230;
-    --txt:#eef2f7; --muted:#9ba5b8; --accent:#00c46a; --accent2:#5b8cff;
+    --bg:#050505; --panel:#0c0c0d; --line:#1c1c1f;
+    --txt:#ffffff; --muted:rgba(255,255,255,.6); --faint:rgba(255,255,255,.38);
+    --accent:#00c46a;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{background:var(--bg);color:var(--txt);
     font:16px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;
-    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;letter-spacing:-.01em}
   a{color:inherit;text-decoration:none}
-  .wrap{max-width:1120px;margin:0 auto;padding:0 32px}
-
-  /* focus — never suppressed */
+  .wrap{max-width:1100px;margin:0 auto;padding:0 32px}
   :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
-  .btn.ghost:focus-visible{outline-color:#fff}
-
-  .skip-link{position:absolute;top:-100%;left:16px;background:var(--accent);color:#04130b;
-    font-weight:600;padding:8px 16px;border-radius:6px;z-index:200}
+  .skip-link{position:absolute;top:-100%;left:16px;background:var(--accent);color:#04130b;font-weight:600;padding:8px 16px;border-radius:6px;z-index:200}
   .skip-link:focus{top:16px}
 
-  /* nav */
-  nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(14px);
-    background:rgba(6,7,10,.6);border-bottom:1px solid transparent;transition:border-color .3s}
+  nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(16px);
+    background:rgba(5,5,5,.55);border-bottom:1px solid transparent;transition:border-color .3s}
   nav.scrolled{border-color:var(--line)}
   nav .wrap{display:flex;align-items:center;height:64px;gap:16px}
-  .logo{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:-.01em}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:600}
   .logo svg{color:var(--accent)}
-  nav .links{margin-left:auto;display:flex;gap:26px;align-items:center;color:var(--muted);font-size:14px}
+  nav .links{margin-left:auto;display:flex;gap:28px;align-items:center;color:var(--muted);font-size:14px}
   nav .links a:hover{color:var(--txt)}
-  .btn{background:var(--accent);color:#04130b;font-weight:600;font-size:14px;
-    padding:9px 18px;border-radius:10px;transition:transform .2s,box-shadow .2s}
-  .btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,196,106,.25)}
-  .btn.ghost{background:transparent;color:var(--txt);border:1px solid #3a4860}
+  .btn{background:var(--txt);color:#050505;font-weight:600;font-size:14px;padding:10px 20px;border-radius:100px;transition:transform .2s,opacity .2s}
+  .btn:hover{transform:translateY(-1px);opacity:.9}
+  .btn.accent{background:var(--accent);color:#04130b}
+  .btn.ghost{background:transparent;color:var(--txt);border:1px solid #2a2a2e}
 
-  /* hero */
-  .hero{position:relative;min-height:100vh;display:flex;align-items:center;overflow:hidden}
-  .mesh{position:absolute;inset:-30% -10% auto -10%;height:130%;z-index:0;filter:blur(70px);opacity:.5;
-    background:
-      radial-gradient(40% 50% at 20% 30%, rgba(0,196,106,.45), transparent 60%),
-      radial-gradient(45% 50% at 80% 22%, rgba(91,140,255,.4), transparent 60%);
-    animation:drift 18s ease-in-out infinite alternate}
-  @keyframes drift{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-4%,3%,0) scale(1.12)}}
-  .grid-ov{position:absolute;inset:0;z-index:0;opacity:.4;
-    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
-    background-size:52px 52px;mask-image:radial-gradient(70% 70% at 50% 40%,#000,transparent)}
-  .hero .wrap{position:relative;z-index:1}
-  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--accent);
-    border:1px solid rgba(0,196,106,.3);border-radius:30px;padding:6px 14px;margin-bottom:26px;
-    background:rgba(0,196,106,.07)}
-  h1{font-size:clamp(40px,7vw,82px);line-height:1.02;letter-spacing:-.03em;font-weight:700;max-width:14ch}
-  h1 .grad{color:#9fe7c4;background:linear-gradient(120deg,#fff,#9fe7c4 60%,#7fb0ff);
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .sub{margin-top:24px;font-size:clamp(17px,2.2vw,20px);color:var(--muted);max-width:56ch;line-height:1.55}
-  .cta{margin-top:40px;display:flex;gap:16px;flex-wrap:wrap}
-  .scroll-cue{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);z-index:1;
-    color:var(--muted);font-size:12px;letter-spacing:.12em;text-transform:uppercase;animation:bob 2.4s ease-in-out infinite}
-  @keyframes bob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,7px)}}
+  /* hero with anti-gravity network canvas */
+  .hero{position:relative;height:100vh;min-height:660px;display:flex;align-items:center;overflow:hidden}
+  #field{position:absolute;inset:0;z-index:0;display:block}
+  .hero .wrap{position:relative;z-index:2;pointer-events:none}
+  .hero .wrap a,.hero .wrap .eyebrow{pointer-events:auto}
+  .vignette{position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(60% 60% at 50% 45%,transparent,rgba(5,5,5,.55) 80%,var(--bg))}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
+    border:1px solid var(--line);border-radius:100px;padding:7px 15px;margin-bottom:30px;background:rgba(255,255,255,.03)}
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  h1{font-size:clamp(44px,8vw,96px);line-height:.98;letter-spacing:-.04em;font-weight:600;max-width:15ch}
+  .sub{margin-top:28px;font-size:clamp(17px,2.2vw,21px);color:var(--muted);max-width:52ch;line-height:1.5}
+  .cta{margin-top:40px;display:flex;gap:14px;flex-wrap:wrap}
+  .scroll-cue{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);z-index:2;
+    color:var(--faint);font-size:11px;letter-spacing:.22em;text-transform:uppercase}
 
-  .js .reveal{opacity:0;transform:translateY(26px);
-    transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .js .reveal{opacity:0;transform:translateY(24px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
   .js .reveal.in{opacity:1;transform:none}
 
-  section{padding:120px 0}
-  .kicker{display:block;color:var(--accent);font-size:13px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
-  h2{font-size:clamp(28px,4.4vw,46px);letter-spacing:-.025em;line-height:1.08;font-weight:600;max-width:18ch}
-  .lead{color:var(--muted);margin-top:18px;font-size:18px;max-width:60ch}
+  section{padding:130px 0;position:relative}
+  .kicker{display:block;color:var(--accent);font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;margin-bottom:14px}
+  h2{font-size:clamp(30px,4.6vw,52px);letter-spacing:-.03em;line-height:1.04;font-weight:600;max-width:16ch}
+  .lead{color:var(--muted);margin-top:20px;font-size:18px;max-width:58ch;line-height:1.5}
 
-  .features{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;margin-top:56px}
-  .card{background:linear-gradient(160deg,var(--panel),var(--bg2));border:1px solid var(--line);
-    border-radius:18px;padding:32px;transition:transform .3s,border-color .3s}
-  .card:hover{transform:translateY(-4px);border-color:rgba(0,196,106,.25)}
-  .card .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
-    background:rgba(0,196,106,.12);margin-bottom:16px}
-  .card .ic svg{color:var(--accent)}
-  .card h3{font-size:18px;font-weight:600;letter-spacing:-.01em}
-  .card p{color:#a0aabe;margin-top:8px;font-size:15px}
+  .rows{margin-top:64px;border-top:1px solid var(--line)}
+  .row{display:grid;grid-template-columns:46px 1fr;gap:24px;padding:34px 0;border-bottom:1px solid var(--line);
+    align-items:start;transition:padding-left .35s}
+  .row:hover{padding-left:10px}
+  .row .ic{color:var(--accent)}
+  .row h3{font-size:21px;font-weight:600;letter-spacing:-.02em}
+  .row p{color:var(--muted);margin-top:8px;font-size:15.5px;max-width:64ch}
 
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:48px;text-align:center}
-  .stat .n{font-size:clamp(30px,5vw,48px);font-weight:700;letter-spacing:-.03em;color:#9fe7c4;
-    background:linear-gradient(120deg,#fff,#9fe7c4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .stat .l{color:#a3adc0;font-size:13px;margin-top:6px;text-transform:uppercase;letter-spacing:.12em}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:60px}
+  .stat .n{font-size:clamp(34px,5.5vw,60px);font-weight:600;letter-spacing:-.04em;line-height:1}
+  .stat .l{color:var(--faint);font-size:13px;margin-top:10px;letter-spacing:.04em}
 
-  .moat{background:radial-gradient(80% 120% at 50% 0%,rgba(91,140,255,.08),transparent),var(--bg2);
-    border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .final{text-align:center}
-  .final h2{margin:0 auto;max-width:20ch}
-  .final .lead{margin:18px auto 0}
+  .final h2{margin:0 auto;max-width:18ch}
+  .final .lead{margin:20px auto 0}
   .final .cta{justify-content:center}
-  footer{padding:40px 0;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+  footer{padding:44px 0;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
   footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
 
-  @media(max-width:760px){.features,.stats{grid-template-columns:1fr}.stats{gap:34px}nav .links a:not(.btn){display:none}}
+  @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr);gap:36px}nav .links a:not(.btn){display:none}}
   @media (prefers-reduced-motion: reduce){
-    .mesh,.scroll-cue{animation:none}
     .js .reveal{opacity:1;transform:none;transition:none}
-    .card:hover{transform:none}.btn:hover{transform:none;box-shadow:none}
-    html{scroll-behavior:auto}
-  }
-  @media (forced-colors: active){
-    h1 .grad,.stat .n{-webkit-background-clip:unset;background-clip:unset;-webkit-text-fill-color:CanvasText;color:CanvasText;background:none}
+    html{scroll-behavior:auto}.btn:hover{transform:none}.row:hover{padding-left:0}
+    #field{display:none}
   }
 </style>
 </head>
@@ -113,7 +90,7 @@
 <a class="skip-link" href="#main">Skip to main content</a>
 
 <nav id="nav" aria-label="Primary"><div class="wrap">
-  <a class="logo" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 22 20H2z" opacity=".9"/><circle cx="12" cy="14.5" r="2.4" fill="#06070a"/></svg>Watchclaw</a>
+  <a class="logo" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 22 20H2z" opacity=".9"/><circle cx="12" cy="14.6" r="2.3" fill="#050505"/></svg>Watchclaw</a>
   <div class="links">
     <a href="#features">Platform</a>
     <a href="#moat">Why sovereign</a>
@@ -123,13 +100,14 @@
 
 <main id="main">
 <header class="hero">
-  <div class="mesh"></div><div class="grid-ov"></div>
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="vignette"></div>
   <div class="wrap">
-    <span class="eyebrow"><span aria-hidden="true">● </span>Sovereign RMM · built in the EU</span>
-    <h1>See <span class="grad">every device</span>. Run IT on your terms.</h1>
-    <p class="sub">Watchclaw discovers, identifies and monitors your whole network — endpoints, printers, NAS, cameras, IoT — with an AI-native agent. Self-hosted, EU-sovereign, no US cloud.</p>
+    <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Sovereign RMM · built in the EU</span>
+    <h1>Every device. One living map.</h1>
+    <p class="sub">Watchclaw discovers, identifies and monitors your whole network — endpoints, printers, NAS, cameras, IoT — with an AI-native agent. Self-hosted. EU-sovereign. No US cloud.</p>
     <div class="cta">
-      <a class="btn" href="/app">Open live dashboard<span aria-hidden="true"> →</span></a>
+      <a class="btn accent" href="/app">Open live dashboard</a>
       <a class="btn ghost" href="#features">See how it works</a>
     </div>
   </div>
@@ -140,19 +118,19 @@
   <div class="wrap">
     <div class="reveal"><h2><span class="kicker">The platform</span>One agent. The whole picture.</h2>
     <p class="lead">A single lightweight agent maps your network and keeps every machine healthy — no fleet of disconnected tools.</p></div>
-    <div class="features">
-      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.9 16.1a9 9 0 0 1 0-8.2M7.8 13.2a5 5 0 0 1 0-2.4M19.1 7.9a9 9 0 0 1 0 8.2M16.2 10.8a5 5 0 0 1 0 2.4"/><circle cx="12" cy="12" r="2"/></svg></div><h3>Auto-discovery</h3><p>ARP, mDNS, SSDP and SNMP fuse into one live topology. Devices fingerprinted by port + vendor → router, printer, NAS, camera, IoT, phone.</p></div>
-      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></div><h3>AI-native</h3><p>An LLM copilot summarises tickets, drafts scripts and answers in plain language. Every autonomous action passes a risk gate first.</p></div>
-      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></div><h3>EU-sovereign</h3><p>Your data never leaves your region. No US CLOUD Act exposure — built for NIS2 and the regulated SMB that incumbents serve poorly.</p></div>
-      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg></div><h3>Self-hosted</h3><p>Ships as one Rust agent + one Go control plane. Runs in a container on your own server. Open-core, no lock-in, predictable pricing.</p></div>
+    <div class="rows">
+      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4.9 16.1a9 9 0 0 1 0-8.2M7.8 13.2a5 5 0 0 1 0-2.4M19.1 7.9a9 9 0 0 1 0 8.2M16.2 10.8a5 5 0 0 1 0 2.4"/><circle cx="12" cy="12" r="2"/></svg></span><div><h3>Auto-discovery</h3><p>ARP, mDNS, SSDP and SNMP fuse into one live topology. Devices fingerprinted by port + vendor → router, printer, NAS, camera, IoT, phone.</p></div></div>
+      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span><div><h3>AI-native</h3><p>An LLM copilot summarises tickets, drafts scripts and answers in plain language. Every autonomous action passes a risk gate first.</p></div></div>
+      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></span><div><h3>EU-sovereign</h3><p>Your data never leaves your region. No US CLOUD Act exposure — built for NIS2 and the regulated SMB that incumbents serve poorly.</p></div></div>
+      <div class="row reveal"><span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg></span><div><h3>Self-hosted</h3><p>One Rust agent + one Go control plane, in a container on your own server. Open-core, no lock-in, predictable pricing.</p></div></div>
     </div>
   </div>
 </section>
 
-<section class="moat" id="moat">
+<section id="moat">
   <div class="wrap">
     <div class="reveal"><h2><span class="kicker">Why it wins</span>The moat is sovereignty, not features.</h2>
-    <p class="lead">NIS2 makes you accountable for your whole supply chain. US-headquartered RMMs can't escape the CLOUD Act. Watchclaw can — because it runs on your infrastructure, in your jurisdiction.</p></div>
+    <p class="lead">NIS2 makes you accountable for your whole supply chain. US-headquartered RMMs can't escape the CLOUD Act. Watchclaw can — it runs on your infrastructure, in your jurisdiction.</p></div>
     <div class="stats">
       <div class="stat reveal"><div class="n">57k</div><div class="l">IEEE vendor IDs</div></div>
       <div class="stat reveal"><div class="n">4</div><div class="l">discovery layers</div></div>
@@ -162,11 +140,11 @@
   </div>
 </section>
 
-<section class="final" id="cta" aria-label="Get started">
+<section class="final" aria-label="Get started">
   <div class="wrap reveal">
     <h2><span class="kicker">Live now</span>Your network, mapped in real time.</h2>
     <p class="lead">The dashboard is running. Open it and watch the topology build itself.</p>
-    <div class="cta"><a class="btn" href="/app">Open dashboard<span aria-hidden="true"> →</span></a></div>
+    <div class="cta"><a class="btn accent" href="/app">Open dashboard</a></div>
   </div>
 </section>
 </main>
@@ -180,8 +158,73 @@
   document.documentElement.classList.add('js');
   const nav=document.getElementById('nav');
   addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>20),{passive:true});
-  const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.15});
-  document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%4*60)+'ms';io.observe(el)});
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.15});
+  document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%4*70)+'ms';io.observe(el)});
+
+  /* ---- anti-gravity network field (Antigravity-style: float + mouse) ---- */
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const cv = document.getElementById('field');
+  if (cv && !reduce) {
+    const ctx = cv.getContext('2d');
+    let W,H,DPR,nodes=[];
+    const mouse={x:-9999,y:-9999,active:false};
+    function resize(){
+      DPR=Math.min(devicePixelRatio||1,2);
+      W=cv.clientWidth=cv.offsetParent?cv.parentElement.clientWidth:innerWidth;
+      H=cv.clientHeight=cv.parentElement.clientHeight;
+      cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+      const count=Math.round(Math.min(96,Math.max(46,W*H/16000)));
+      nodes=Array.from({length:count},()=>({
+        x:Math.random()*W,y:Math.random()*H,
+        vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,
+        r:Math.random()*1.6+1.1
+      }));
+    }
+    addEventListener('resize',resize);
+    cv.parentElement.addEventListener('pointermove',e=>{const b=cv.getBoundingClientRect();mouse.x=e.clientX-b.left;mouse.y=e.clientY-b.top;mouse.active=true;});
+    cv.parentElement.addEventListener('pointerleave',()=>mouse.active=false);
+    resize();
+    const LINK=132, REPEL=128;
+    function frame(){
+      ctx.clearRect(0,0,W,H);
+      for(const n of nodes){
+        // zero-g drift
+        n.x+=n.vx; n.y+=n.vy;
+        // gentle random wander
+        n.vx+=(Math.random()-.5)*.012; n.vy+=(Math.random()-.5)*.012;
+        // mouse anti-gravity repulsion
+        if(mouse.active){
+          const dx=n.x-mouse.x, dy=n.y-mouse.y, d=Math.hypot(dx,dy);
+          if(d<REPEL && d>0){const f=(1-d/REPEL)*1.4; n.vx+=dx/d*f*.12; n.vy+=dy/d*f*.12;}
+        }
+        // damping + soft speed cap
+        n.vx*=.975; n.vy*=.975;
+        const sp=Math.hypot(n.vx,n.vy), max=.9;
+        if(sp>max){n.vx*=max/sp;n.vy*=max/sp;}
+        // wrap edges
+        if(n.x<-20)n.x=W+20; if(n.x>W+20)n.x=-20;
+        if(n.y<-20)n.y=H+20; if(n.y>H+20)n.y=-20;
+      }
+      // links
+      for(let i=0;i<nodes.length;i++){
+        for(let j=i+1;j<nodes.length;j++){
+          const a=nodes[i],b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy);
+          if(d<LINK){
+            const o=(1-d/LINK)*.5;
+            ctx.strokeStyle='rgba(0,196,106,'+o*0.55+')';
+            ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+          }
+        }
+      }
+      // nodes
+      for(const n of nodes){
+        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,7);
+        ctx.fillStyle='rgba(255,255,255,.82)';ctx.fill();
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
 </script>
 </body>
 </html>
