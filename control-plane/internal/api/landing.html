@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#06070a" />
+<title>Watchclaw — Sovereign RMM for Europe</title>
+<style>
+  :root{
+    --bg:#06070a; --bg2:#0b0e14; --panel:#11151d; --line:#1b2230;
+    --txt:#eef2f7; --muted:#9ba5b8; --accent:#00c46a; --accent2:#5b8cff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--txt);
+    font:16px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 32px}
+
+  /* focus — never suppressed */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+  .btn.ghost:focus-visible{outline-color:#fff}
+
+  .skip-link{position:absolute;top:-100%;left:16px;background:var(--accent);color:#04130b;
+    font-weight:600;padding:8px 16px;border-radius:6px;z-index:200}
+  .skip-link:focus{top:16px}
+
+  /* nav */
+  nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(14px);
+    background:rgba(6,7,10,.6);border-bottom:1px solid transparent;transition:border-color .3s}
+  nav.scrolled{border-color:var(--line)}
+  nav .wrap{display:flex;align-items:center;height:64px;gap:16px}
+  .logo{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:-.01em}
+  .logo svg{color:var(--accent)}
+  nav .links{margin-left:auto;display:flex;gap:26px;align-items:center;color:var(--muted);font-size:14px}
+  nav .links a:hover{color:var(--txt)}
+  .btn{background:var(--accent);color:#04130b;font-weight:600;font-size:14px;
+    padding:9px 18px;border-radius:10px;transition:transform .2s,box-shadow .2s}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,196,106,.25)}
+  .btn.ghost{background:transparent;color:var(--txt);border:1px solid #3a4860}
+
+  /* hero */
+  .hero{position:relative;min-height:100vh;display:flex;align-items:center;overflow:hidden}
+  .mesh{position:absolute;inset:-30% -10% auto -10%;height:130%;z-index:0;filter:blur(70px);opacity:.5;
+    background:
+      radial-gradient(40% 50% at 20% 30%, rgba(0,196,106,.45), transparent 60%),
+      radial-gradient(45% 50% at 80% 22%, rgba(91,140,255,.4), transparent 60%);
+    animation:drift 18s ease-in-out infinite alternate}
+  @keyframes drift{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-4%,3%,0) scale(1.12)}}
+  .grid-ov{position:absolute;inset:0;z-index:0;opacity:.4;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:52px 52px;mask-image:radial-gradient(70% 70% at 50% 40%,#000,transparent)}
+  .hero .wrap{position:relative;z-index:1}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--accent);
+    border:1px solid rgba(0,196,106,.3);border-radius:30px;padding:6px 14px;margin-bottom:26px;
+    background:rgba(0,196,106,.07)}
+  h1{font-size:clamp(40px,7vw,82px);line-height:1.02;letter-spacing:-.03em;font-weight:700;max-width:14ch}
+  h1 .grad{color:#9fe7c4;background:linear-gradient(120deg,#fff,#9fe7c4 60%,#7fb0ff);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .sub{margin-top:24px;font-size:clamp(17px,2.2vw,20px);color:var(--muted);max-width:56ch;line-height:1.55}
+  .cta{margin-top:40px;display:flex;gap:16px;flex-wrap:wrap}
+  .scroll-cue{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);z-index:1;
+    color:var(--muted);font-size:12px;letter-spacing:.12em;text-transform:uppercase;animation:bob 2.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,7px)}}
+
+  .js .reveal{opacity:0;transform:translateY(26px);
+    transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .js .reveal.in{opacity:1;transform:none}
+
+  section{padding:120px 0}
+  .kicker{display:block;color:var(--accent);font-size:13px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
+  h2{font-size:clamp(28px,4.4vw,46px);letter-spacing:-.025em;line-height:1.08;font-weight:600;max-width:18ch}
+  .lead{color:var(--muted);margin-top:18px;font-size:18px;max-width:60ch}
+
+  .features{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;margin-top:56px}
+  .card{background:linear-gradient(160deg,var(--panel),var(--bg2));border:1px solid var(--line);
+    border-radius:18px;padding:32px;transition:transform .3s,border-color .3s}
+  .card:hover{transform:translateY(-4px);border-color:rgba(0,196,106,.25)}
+  .card .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
+    background:rgba(0,196,106,.12);margin-bottom:16px}
+  .card .ic svg{color:var(--accent)}
+  .card h3{font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .card p{color:#a0aabe;margin-top:8px;font-size:15px}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:48px;text-align:center}
+  .stat .n{font-size:clamp(30px,5vw,48px);font-weight:700;letter-spacing:-.03em;color:#9fe7c4;
+    background:linear-gradient(120deg,#fff,#9fe7c4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .stat .l{color:#a3adc0;font-size:13px;margin-top:6px;text-transform:uppercase;letter-spacing:.12em}
+
+  .moat{background:radial-gradient(80% 120% at 50% 0%,rgba(91,140,255,.08),transparent),var(--bg2);
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .final{text-align:center}
+  .final h2{margin:0 auto;max-width:20ch}
+  .final .lead{margin:18px auto 0}
+  .final .cta{justify-content:center}
+  footer{padding:40px 0;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+
+  @media(max-width:760px){.features,.stats{grid-template-columns:1fr}.stats{gap:34px}nav .links a:not(.btn){display:none}}
+  @media (prefers-reduced-motion: reduce){
+    .mesh,.scroll-cue{animation:none}
+    .js .reveal{opacity:1;transform:none;transition:none}
+    .card:hover{transform:none}.btn:hover{transform:none;box-shadow:none}
+    html{scroll-behavior:auto}
+  }
+  @media (forced-colors: active){
+    h1 .grad,.stat .n{-webkit-background-clip:unset;background-clip:unset;-webkit-text-fill-color:CanvasText;color:CanvasText;background:none}
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<nav id="nav" aria-label="Primary"><div class="wrap">
+  <a class="logo" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 22 20H2z" opacity=".9"/><circle cx="12" cy="14.5" r="2.4" fill="#06070a"/></svg>Watchclaw</a>
+  <div class="links">
+    <a href="#features">Platform</a>
+    <a href="#moat">Why sovereign</a>
+    <a class="btn ghost" href="/app">Open dashboard</a>
+  </div>
+</div></nav>
+
+<main id="main">
+<header class="hero">
+  <div class="mesh"></div><div class="grid-ov"></div>
+  <div class="wrap">
+    <span class="eyebrow"><span aria-hidden="true">● </span>Sovereign RMM · built in the EU</span>
+    <h1>See <span class="grad">every device</span>. Run IT on your terms.</h1>
+    <p class="sub">Watchclaw discovers, identifies and monitors your whole network — endpoints, printers, NAS, cameras, IoT — with an AI-native agent. Self-hosted, EU-sovereign, no US cloud.</p>
+    <div class="cta">
+      <a class="btn" href="/app">Open live dashboard<span aria-hidden="true"> →</span></a>
+      <a class="btn ghost" href="#features">See how it works</a>
+    </div>
+  </div>
+  <div class="scroll-cue" aria-hidden="true">scroll</div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="reveal"><h2><span class="kicker">The platform</span>One agent. The whole picture.</h2>
+    <p class="lead">A single lightweight agent maps your network and keeps every machine healthy — no fleet of disconnected tools.</p></div>
+    <div class="features">
+      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.9 16.1a9 9 0 0 1 0-8.2M7.8 13.2a5 5 0 0 1 0-2.4M19.1 7.9a9 9 0 0 1 0 8.2M16.2 10.8a5 5 0 0 1 0 2.4"/><circle cx="12" cy="12" r="2"/></svg></div><h3>Auto-discovery</h3><p>ARP, mDNS, SSDP and SNMP fuse into one live topology. Devices fingerprinted by port + vendor → router, printer, NAS, camera, IoT, phone.</p></div>
+      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></div><h3>AI-native</h3><p>An LLM copilot summarises tickets, drafts scripts and answers in plain language. Every autonomous action passes a risk gate first.</p></div>
+      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></div><h3>EU-sovereign</h3><p>Your data never leaves your region. No US CLOUD Act exposure — built for NIS2 and the regulated SMB that incumbents serve poorly.</p></div>
+      <div class="card reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg></div><h3>Self-hosted</h3><p>Ships as one Rust agent + one Go control plane. Runs in a container on your own server. Open-core, no lock-in, predictable pricing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="moat" id="moat">
+  <div class="wrap">
+    <div class="reveal"><h2><span class="kicker">Why it wins</span>The moat is sovereignty, not features.</h2>
+    <p class="lead">NIS2 makes you accountable for your whole supply chain. US-headquartered RMMs can't escape the CLOUD Act. Watchclaw can — because it runs on your infrastructure, in your jurisdiction.</p></div>
+    <div class="stats">
+      <div class="stat reveal"><div class="n">57k</div><div class="l">IEEE vendor IDs</div></div>
+      <div class="stat reveal"><div class="n">4</div><div class="l">discovery layers</div></div>
+      <div class="stat reveal"><div class="n">&lt;35MB</div><div class="l">agent footprint</div></div>
+      <div class="stat reveal"><div class="n">100%</div><div class="l">self-hosted</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="final" id="cta" aria-label="Get started">
+  <div class="wrap reveal">
+    <h2><span class="kicker">Live now</span>Your network, mapped in real time.</h2>
+    <p class="lead">The dashboard is running. Open it and watch the topology build itself.</p>
+    <div class="cta"><a class="btn" href="/app">Open dashboard<span aria-hidden="true"> →</span></a></div>
+  </div>
+</section>
+</main>
+
+<footer><div class="wrap">
+  <span>Watchclaw — FullStackIT SRL · Sovereign RMM for Europe</span>
+  <span>Self-hosted · Open-core · EU-first</span>
+</div></footer>
+
+<script>
+  document.documentElement.classList.add('js');
+  const nav=document.getElementById('nav');
+  addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>20),{passive:true});
+  const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.15});
+  document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%4*60)+'ms';io.observe(el)});
+</script>
+</body>
+</html>

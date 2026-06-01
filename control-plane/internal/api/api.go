@@ -17,6 +17,9 @@ import (
 	"github.com/fullstackit/watchclaw/control-plane/internal/topology"
 )
 
+//go:embed landing.html
+var landingHTML []byte
+
 //go:embed dashboard.html
 var dashboardHTML []byte
 
@@ -31,7 +34,8 @@ type Handler struct {
 func New(s store.Store, logger *slog.Logger) http.Handler {
 	h := &Handler{store: s, logger: logger}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", h.dashboard)
+	mux.HandleFunc("GET /{$}", h.landing)
+	mux.HandleFunc("GET /app", h.dashboard)
 	mux.HandleFunc("GET /cytoscape.min.js", h.cytoscape)
 	mux.HandleFunc("GET /progress", h.progress)
 	mux.HandleFunc("GET /healthz", h.health)
@@ -40,6 +44,11 @@ func New(s store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/discovery", h.postDiscovery)
 	mux.HandleFunc("GET /v1/topology", h.getTopology)
 	return mux
+}
+
+func (h *Handler) landing(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(landingHTML)
 }
 
 func (h *Handler) dashboard(w http.ResponseWriter, _ *http.Request) {
