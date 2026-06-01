@@ -26,6 +26,7 @@ pub fn collect() -> Option<HardwareInventory> {
 mod windows {
     use crate::model::{DiskDrive, HardwareInventory, InstalledApp, UsbDevice};
     use serde::Deserialize;
+    use std::process::Command;
     use wmi::{COMLibrary, WMIConnection};
     use winreg::enums::*;
     use winreg::RegKey;
@@ -166,7 +167,33 @@ mod windows {
             }
         }
 
+        // Pending package updates (winget). Best-effort; empty on any failure.
+        inv.available_updates = read_winget_updates();
+
         Ok(inv)
+    }
+
+    /// Run winget and return the list of pending updates. winget's table is the
+    /// only stable interface (no JSON for `upgrade`), so we disable the progress
+    /// bar and hand the text to the cross-platform parser.
+    fn read_winget_updates() -> Vec<crate::model::PackageUpdate> {
+        // winget.exe is a WindowsApps App Execution Alias (a zero-byte reparse
+        // point); spawning it directly via CreateProcess fails. Going through
+        // `cmd /C` resolves the alias and PATH the way a shell would.
+        let output = Command::new("cmd")
+            .args([
+                "/C",
+                "winget",
+                "upgrade",
+                "--include-unknown",
+                "--disable-interactivity",
+            ])
+            .env("WINGET_DISABLE_PROGRESS_BAR", "1")
+            .output();
+        match output {
+            Ok(out) => super::parse_winget_table(&String::from_utf8_lossy(&out.stdout)),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Read installed applications from the Uninstall registry hive across the
@@ -232,5 +259,135 @@ mod windows {
             Some(i) => s[i + key.len()..].chars().take(4).collect(),
             None => String::new(),
         }
+    }
+}
+
+/// Parse winget's fixed-width `upgrade` table into structured updates.
+///
+/// Cross-platform (pure string work) so it is unit-testable anywhere. Column
+/// boundaries are taken from the *character* offsets of the header titles, not
+/// fixed widths — robust to long names that winget truncates with an ellipsis,
+/// and to the Unicode (®, …) that appears in product names. Progress/spinner
+/// lines and the trailing summary are filtered out.
+pub(crate) fn parse_winget_table(text: &str) -> Vec<crate::model::PackageUpdate> {
+    use crate::model::PackageUpdate;
+
+    // winget draws its progress bar with carriage returns (\r) instead of
+    // newlines, so the spinner frames and the "Name Id Version" header land on
+    // one logical line when captured. Normalize \r to \n so each frame becomes
+    // its own (then-filtered) line and the header stands alone with correct
+    // column offsets.
+    let text = text.replace('\r', "\n");
+    let text = text.as_str();
+
+    let is_noise = |l: &&str| {
+        let t = l.trim();
+        t.is_empty()
+            || l.contains('█')
+            || l.contains('▒')
+            // single-char progress spinner frames: "-", "\", "|", "/"
+            || (t.len() <= 2 && t.chars().all(|c| matches!(c, '-' | '\\' | '|' | '/')))
+    };
+    let lines: Vec<&str> = text.lines().filter(|l| !is_noise(l)).collect();
+
+    let header_idx = match lines.iter().position(|l| {
+        l.contains("Name") && l.contains("Id") && l.contains("Version") && l.contains("Available")
+    }) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    let header = lines[header_idx];
+
+    // Character offset (not byte) where a column title begins in the header.
+    let col = |title: &str| header.find(title).map(|b| header[..b].chars().count());
+    let (id_off, ver_off, avail_off) = match (col("Id"), col("Version"), col("Available")) {
+        (Some(a), Some(b), Some(c)) => (a, b, c),
+        _ => return Vec::new(),
+    };
+    let src_off = col("Source");
+
+    let slice = |chars: &[char], start: usize, end: Option<usize>| -> String {
+        if start >= chars.len() {
+            return String::new();
+        }
+        let e = end.unwrap_or(chars.len()).min(chars.len());
+        if e <= start {
+            return String::new();
+        }
+        chars[start..e].iter().collect::<String>().trim().to_string()
+    };
+
+    let mut out = Vec::new();
+    for line in lines.iter().skip(header_idx + 1) {
+        if line.trim_start().starts_with('-') {
+            continue; // separator row
+        }
+        let chars: Vec<char> = line.chars().collect();
+        if chars.len() <= id_off {
+            continue; // summary line ("N upgrades available", etc.)
+        }
+        let name = slice(&chars, 0, Some(id_off));
+        let id = slice(&chars, id_off, Some(ver_off));
+        let current = slice(&chars, ver_off, Some(avail_off));
+        let available = slice(&chars, avail_off, src_off);
+        // A real update row has both an id and an available version.
+        if id.is_empty() || available.is_empty() {
+            continue;
+        }
+        out.push(PackageUpdate { name, id, current, available });
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_winget_table;
+
+    // winget's table is fixed-width. We reproduce that with format! widths so
+    // the test exercises the parser, not hand-aligned spaces. Names carry the
+    // same Unicode winget emits (®, the … truncation marker) to prove the
+    // char-offset slicing survives multi-byte characters in the Name column.
+    const W: (usize, usize, usize, usize) = (51, 34, 14, 14); // name,id,ver,avail
+    fn row(name: &str, id: &str, cur: &str, avail: &str) -> String {
+        format!("{:<n$}{:<i$}{:<v$}{:<a$}{}", name, id, cur, avail, "winget",
+            n = W.0, i = W.1, v = W.2, a = W.3)
+    }
+    fn sample() -> String {
+        let header = format!("{:<n$}{:<i$}{:<v$}{:<a$}{}", "Name", "Id", "Version", "Available",
+            "Source", n = W.0, i = W.1, v = W.2, a = W.3);
+        [
+            header.as_str(),
+            &"-".repeat(119),
+            &row("7-Zip 26.00 (x64)", "7zip.7zip", "26.00", "26.01"),
+            &row("HWiNFO\u{00ae} 64", "REALiX.HWiNFO", "8.16", "8.48"),
+            &row("ImageMagick Q16 (2026-05-1\u{2026}", "ImageMagick.ImageMagick", "7.1.2.23", "7.1.2.24"),
+            "13 upgrades available.",
+        ]
+        .join("\n")
+    }
+
+    #[test]
+    fn parses_rows_and_skips_summary() {
+        let ups = parse_winget_table(&sample());
+        assert_eq!(ups.len(), 3, "should parse 3 update rows, not the summary");
+        assert_eq!(ups[0].id, "7zip.7zip");
+        assert_eq!(ups[0].current, "26.00");
+        assert_eq!(ups[0].available, "26.01");
+    }
+
+    #[test]
+    fn handles_unicode_in_name() {
+        let ups = parse_winget_table(&sample());
+        // ® and the … truncation must not desync the column slicing
+        assert_eq!(ups[1].id, "REALiX.HWiNFO");
+        assert_eq!(ups[1].available, "8.48");
+        assert_eq!(ups[2].id, "ImageMagick.ImageMagick");
+        assert_eq!(ups[2].available, "7.1.2.24");
+    }
+
+    #[test]
+    fn empty_or_garbage_yields_nothing() {
+        assert!(parse_winget_table("").is_empty());
+        assert!(parse_winget_table("no table here\njust text").is_empty());
     }
 }

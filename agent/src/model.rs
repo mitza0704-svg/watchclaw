@@ -47,6 +47,18 @@ pub struct HardwareInventory {
     pub hotfixes: Vec<String>,
     /// Disks whose SMART subsystem predicts failure (empty = all healthy).
     pub disk_health_warnings: Vec<String>,
+    /// Pending package updates (winget). Empty when all up to date / unsupported.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub available_updates: Vec<PackageUpdate>,
+}
+
+/// One pending package update reported by the OS package manager (winget).
+#[derive(Debug, Serialize, Default)]
+pub struct PackageUpdate {
+    pub name: String,
+    pub id: String,
+    pub current: String,
+    pub available: String,
 }
 
 #[derive(Debug, Serialize, Default)]
