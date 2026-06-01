@@ -1,0 +1,32 @@
+# Watchclaw — fully isolated from the OpenClaw stack on zmfbot.
+# Own container, own dedicated network, own named volume. Does NOT join any
+# OpenClaw network and does not touch /opt/openclaw-stack. Deploy from /opt/watchclaw.
+#
+#   cd /opt/watchclaw/src/infra && docker compose up -d --build
+#
+services:
+  watchclaw-cp:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: watchclaw-cp:latest
+    container_name: watchclaw-cp
+    restart: unless-stopped
+    ports:
+      - "8787:8787"          # reachable on host (LAN + Tailscale); not via OpenClaw Traefik
+    volumes:
+      - watchclaw-data:/data
+      - ../LIVE-PROGRESS.md:/progress/LIVE-PROGRESS.md:ro   # live progress page
+    networks:
+      - watchclaw-net
+    labels:
+      com.fullstackit.project: watchclaw
+      com.fullstackit.isolation: "standalone — not part of openclaw-stack"
+
+networks:
+  watchclaw-net:
+    name: watchclaw-net          # dedicated bridge, isolated from OpenClaw networks
+
+volumes:
+  watchclaw-data:
+    name: watchclaw-data         # dedicated volume for the SQLite DB
