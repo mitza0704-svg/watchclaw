@@ -12,6 +12,7 @@ mod collector;
 mod discovery;
 mod fingerprint;
 mod inventory;
+mod mdns;
 mod model;
 mod oui;
 mod ssdp;

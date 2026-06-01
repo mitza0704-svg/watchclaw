@@ -15,6 +15,7 @@ if-addrs = "0.13"   # enumerate local interfaces to derive the subnet to scan
 rayon = "1"         # parallel host probing across the subnet
 netdev = "0.31"     # real default gateway from the routing table (not guessed)
 dns-lookup = "2"    # best-effort reverse-DNS hostname resolution
+mdns-sd = "0.11"    # mDNS/DNS-SD service discovery (printers, Chromecast, NAS, HomeKit)
 
 # Deep hardware inventory via WMI is Windows-only; Linux/macOS get native
 # collectors later (dmidecode/udev, ioreg). Gated so the agent still builds

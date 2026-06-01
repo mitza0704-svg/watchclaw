@@ -73,21 +73,34 @@ pub fn scan() -> NetworkScan {
     let mut devices: Vec<NetworkDevice> = by_ip.into_values().collect();
     devices.sort_by(|a, b| ip_key(&a.ip).cmp(&ip_key(&b.ip)));
 
-    // SSDP/UPnP: devices that announce themselves (router/media/printer/IoT) —
-    // used to refine the type of otherwise-unknown devices.
+    // Self-announced devices: SSDP/UPnP (router/media/...) and mDNS/DNS-SD
+    // (printers, Chromecast, NAS, HomeKit) — both refine type + identity.
     let ssdp = crate::ssdp::discover(3);
+    let mdns = crate::mdns::discover(3);
 
-    // Best-effort real identity: reverse-DNS hostname + device-type fingerprint,
-    // refined by SSDP when the port/vendor fingerprint is inconclusive.
+    // Identity pipeline: fingerprint (port+vendor) -> SSDP -> mDNS, plus the best
+    // available hostname (reverse-DNS, falling back to mDNS).
     for d in devices.iter_mut() {
         d.hostname = resolve_hostname(&d.ip);
         d.device_type = crate::fingerprint::classify(&d.open_ports, &d.nic_vendor);
+
         if d.device_type == "device" {
             if let Some(info) = ssdp.get(&d.ip) {
                 let t = crate::ssdp::device_type_from_st(&info.st);
                 if !t.is_empty() {
                     d.device_type = t.to_string();
                 }
+            }
+        }
+        if let Some(m) = mdns.get(&d.ip) {
+            if d.device_type == "device" {
+                let t = crate::mdns::device_type_from_services(&m.service_types);
+                if !t.is_empty() {
+                    d.device_type = t.to_string();
+                }
+            }
+            if d.hostname.is_empty() && !m.hostname.is_empty() {
+                d.hostname = m.hostname.clone();
             }
         }
     }
