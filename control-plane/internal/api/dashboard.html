@@ -61,14 +61,24 @@
 <div class="legend" id="legend">
   <b>Legend</b>
   <span><i style="background:#5b8cff"></i>Internet</span>
-  <span><i style="background:#f0a23d"></i>Gateway</span>
-  <span><i style="background:#3dd6c4"></i>Endpoint</span>
+  <span><i style="background:#f0a23d"></i>Router/GW</span>
+  <span><i style="background:#3dd6c4"></i>Workstation</span>
+  <span><i style="background:#3dd68c"></i>Server</span>
   <span><i style="background:#f0d23d"></i>Printer</span>
+  <span><i style="background:#b07cf0"></i>NAS</span>
+  <span><i style="background:#f0506b"></i>Camera</span>
+  <span><i style="background:#5fd0e0"></i>Phone</span>
+  <span><i style="background:#f59e6c"></i>IoT</span>
   <span><i style="background:#8a93a5"></i>Device</span>
 </div>
 
 <script>
-const COLORS = { internet:"#5b8cff", gateway:"#f0a23d", endpoint:"#3dd6c4", printer:"#f0d23d", device:"#8a93a5" };
+const COLORS = {
+  internet:"#5b8cff", gateway:"#f0a23d", router:"#f0a23d", network:"#8a93a5",
+  workstation:"#3dd6c4", endpoint:"#3dd6c4", server:"#3dd68c",
+  printer:"#f0d23d", nas:"#b07cf0", camera:"#f0506b", phone:"#5fd0e0",
+  media:"#e07cf0", iot:"#f59e6c", device:"#8a93a5"
+};
 const HEALTH = { ok:"#3dd68c", warning:"#f0a23d", critical:"#f0506b" };
 let cy = null, view = "topo";
 

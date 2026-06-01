@@ -83,13 +83,18 @@ func deviceLabel(d model.NetworkDevice) string {
 	return d.IP
 }
 
+// deviceType uses the agent's fingerprint when present, falling back to a port
+// heuristic for older reports.
 func deviceType(d model.NetworkDevice) string {
+	if d.DeviceType != "" {
+		return d.DeviceType
+	}
 	for _, p := range d.OpenPorts {
 		if p == 9100 {
 			return "printer"
 		}
 		if p == 445 || p == 3389 || p == 135 {
-			return "endpoint"
+			return "workstation"
 		}
 	}
 	return "device"

@@ -73,9 +73,23 @@ pub fn scan() -> NetworkScan {
     let mut devices: Vec<NetworkDevice> = by_ip.into_values().collect();
     devices.sort_by(|a, b| ip_key(&a.ip).cmp(&ip_key(&b.ip)));
 
-    // Best-effort real identity: reverse-DNS hostname per device.
+    // SSDP/UPnP: devices that announce themselves (router/media/printer/IoT) —
+    // used to refine the type of otherwise-unknown devices.
+    let ssdp = crate::ssdp::discover(3);
+
+    // Best-effort real identity: reverse-DNS hostname + device-type fingerprint,
+    // refined by SSDP when the port/vendor fingerprint is inconclusive.
     for d in devices.iter_mut() {
         d.hostname = resolve_hostname(&d.ip);
+        d.device_type = crate::fingerprint::classify(&d.open_ports, &d.nic_vendor);
+        if d.device_type == "device" {
+            if let Some(info) = ssdp.get(&d.ip) {
+                let t = crate::ssdp::device_type_from_st(&info.st);
+                if !t.is_empty() {
+                    d.device_type = t.to_string();
+                }
+            }
+        }
     }
 
     NetworkScan {

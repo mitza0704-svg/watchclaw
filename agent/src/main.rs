@@ -10,9 +10,11 @@
 
 mod collector;
 mod discovery;
+mod fingerprint;
 mod inventory;
 mod model;
 mod oui;
+mod ssdp;
 mod transport;
 
 fn main() {

@@ -105,5 +105,8 @@ pub struct NetworkDevice {
     /// NIC vendor from the MAC OUI prefix. This is the network-card maker,
     /// NOT the device type/identity (e.g. an Asus PC can have a TP-Link NIC).
     pub nic_vendor: String,
+    /// Best-guess device class from port + vendor fingerprinting:
+    /// router | printer | nas | camera | phone | workstation | server | media | iot | device.
+    pub device_type: String,
     pub open_ports: Vec<u16>,
 }

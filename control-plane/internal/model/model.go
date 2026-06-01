@@ -48,7 +48,9 @@ type NetworkDevice struct {
 	Hostname string `json:"hostname"`
 	// NicVendor = network-card maker (MAC OUI). NOT the device identity.
 	NicVendor string `json:"nic_vendor"`
-	OpenPorts []int  `json:"open_ports"`
+	// DeviceType = agent's port+vendor fingerprint (router/printer/nas/...).
+	DeviceType string `json:"device_type"`
+	OpenPorts  []int  `json:"open_ports"`
 }
 
 // TopologyGraph is the fused network map served to the dashboard.
