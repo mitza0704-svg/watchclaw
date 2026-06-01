@@ -8,6 +8,7 @@
 //! result is POSTed to the matching endpoint; otherwise it is printed as JSON.
 //! Next increment: scheduled loop + local store-and-forward + mTLS + enroll.
 
+mod banner;
 mod collector;
 mod discovery;
 mod fingerprint;

@@ -112,6 +112,17 @@ pub fn scan() -> NetworkScan {
         }
     }
 
+    // L7 banner grab on open ports — parallel across devices since each probe
+    // blocks on short network timeouts. Sharpens identity (OpenSSH/nginx/etc).
+    devices.par_iter_mut().for_each(|d| {
+        let ports = d.open_ports.clone();
+        for p in ports {
+            if let Some(b) = crate::banner::grab(&d.ip, p) {
+                d.banners.push(b);
+            }
+        }
+    });
+
     NetworkScan {
         subnet,
         scanned_at: chrono::Utc::now().to_rfc3339(),

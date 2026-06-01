@@ -109,4 +109,8 @@ pub struct NetworkDevice {
     /// router | printer | nas | camera | phone | workstation | server | media | iot | device.
     pub device_type: String,
     pub open_ports: Vec<u16>,
+    /// Service banners grabbed from open ports, e.g. "ssh: OpenSSH_8.9p1",
+    /// "http: nginx". Cheap L7 identity; empty when nothing responded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub banners: Vec<String>,
 }
