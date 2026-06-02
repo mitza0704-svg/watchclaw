@@ -6,3 +6,6 @@ control-plane/watchclaw-cp.exe
 *.db
 *.exe
 # keep embedded assets: manuf.txt, cytoscape.min.js, dashboard.html
+
+*.exe
+*.exe~
