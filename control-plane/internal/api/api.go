@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/fullstackit/watchclaw/control-plane/internal/agentless"
 	"github.com/fullstackit/watchclaw/control-plane/internal/model"
 	"github.com/fullstackit/watchclaw/control-plane/internal/store"
 	"github.com/fullstackit/watchclaw/control-plane/internal/topology"
@@ -45,6 +47,7 @@ func New(s store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /v1/alerts", h.listAlerts)
 	mux.HandleFunc("POST /v1/discovery", h.postDiscovery)
 	mux.HandleFunc("GET /v1/topology", h.getTopology)
+	mux.HandleFunc("POST /v1/agentless/scan", h.postAgentlessScan)
 	return mux
 }
 
@@ -174,6 +177,45 @@ func (h *Handler) postDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logger.Info("scan stored", "subnet", scan.Subnet, "devices", len(scan.Devices), "reporter", scan.Reporter)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "devices": len(scan.Devices)})
+}
+
+// postAgentlessScan runs a credentialed WinRM inventory of a remote Windows
+// host (no agent installed) and stores it as a normal endpoint report, so it
+// shows up in the dashboard like any agent-reported machine.
+// NOTE: credentials are passed in the request body for now; move to Vault +
+// per-site scoping before exposing this beyond the trusted network.
+func (h *Handler) postAgentlessScan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		HTTPS    bool   `json:"https"`
+		Insecure bool   `json:"insecure"`
+		User     string `json:"user"`
+		Pass     string `json:"pass"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := dec.Decode(&req); err != nil || req.Host == "" || req.User == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "host, user, pass required"})
+		return
+	}
+	if req.Port == 0 {
+		req.Port = 5985
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	defer cancel()
+	report, err := agentless.ScanWindows(ctx, req.Host, req.Port, req.HTTPS, req.Insecure, req.User, req.Pass)
+	if err != nil {
+		h.logger.Warn("agentless scan failed", "host", req.Host, "error", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := h.store.SaveReport(ctx, report); err != nil {
+		h.logger.Error("agentless save failed", "host", req.Host, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not persist report"})
+		return
+	}
+	h.logger.Info("agentless scan stored", "host", req.Host, "hostname", report.Hostname)
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "hostname": report.Hostname, "source": "agentless-winrm"})
 }
 
 func (h *Handler) getTopology(w http.ResponseWriter, r *http.Request) {
