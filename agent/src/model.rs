@@ -50,6 +50,33 @@ pub struct HardwareInventory {
     /// Pending package updates (winget). Empty when all up to date / unsupported.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub available_updates: Vec<PackageUpdate>,
+    /// Auto-start services (the reboot-persistent surface) with binary path —
+    /// the set that matters for ops health and rogue-service detection.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<ServiceInfo>,
+    /// Autorun entries (registry Run/RunOnce) — classic persistence surface.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub startup_items: Vec<StartupItem>,
+}
+
+/// An auto-start Windows service. PathName is the binary command line — the
+/// key field for spotting a service running from a suspicious location.
+#[derive(Debug, Serialize, Default)]
+pub struct ServiceInfo {
+    pub name: String,
+    pub display_name: String,
+    pub state: String,      // Running | Stopped | ...
+    pub start_mode: String, // Auto | Manual | Disabled
+    pub path: String,
+}
+
+/// An autorun entry from a registry Run/RunOnce key.
+#[derive(Debug, Serialize, Default)]
+pub struct StartupItem {
+    pub name: String,
+    pub command: String,
+    /// Which hive/key it came from, e.g. "HKLM\\...\\Run".
+    pub location: String,
 }
 
 /// One pending package update reported by the OS package manager (winget).

@@ -24,9 +24,20 @@ pub fn collect() -> Option<HardwareInventory> {
 
 #[cfg(windows)]
 mod windows {
-    use crate::model::{DiskDrive, HardwareInventory, InstalledApp, UsbDevice};
+    use crate::model::{DiskDrive, HardwareInventory, InstalledApp, ServiceInfo, StartupItem, UsbDevice};
     use serde::Deserialize;
     use std::process::Command;
+
+    #[derive(Deserialize)]
+    #[serde(rename = "Win32_Service")]
+    #[serde(rename_all = "PascalCase")]
+    struct Win32Service {
+        name: Option<String>,
+        display_name: Option<String>,
+        state: Option<String>,
+        start_mode: Option<String>,
+        path_name: Option<String>,
+    }
     use wmi::{COMLibrary, WMIConnection};
     use winreg::enums::*;
     use winreg::RegKey;
@@ -170,7 +181,54 @@ mod windows {
         // Pending package updates (winget). Best-effort; empty on any failure.
         inv.available_updates = read_winget_updates();
 
+        // Auto-start services (persistence/ops surface) with binary path.
+        let svcs: Vec<Win32Service> = wmi
+            .raw_query(
+                "SELECT Name, DisplayName, State, StartMode, PathName \
+                 FROM Win32_Service WHERE StartMode='Auto'",
+            )
+            .unwrap_or_default();
+        for s in svcs {
+            inv.services.push(ServiceInfo {
+                name: s.name.unwrap_or_default(),
+                display_name: s.display_name.unwrap_or_default(),
+                state: s.state.unwrap_or_default(),
+                start_mode: s.start_mode.unwrap_or_default(),
+                path: s.path_name.unwrap_or_default(),
+            });
+        }
+
+        // Autorun entries (registry Run/RunOnce) — classic persistence surface.
+        inv.startup_items = read_startup_items();
+
         Ok(inv)
+    }
+
+    /// Read autorun entries from the standard Run/RunOnce registry keys across
+    /// HKLM (64-bit + WOW6432) and HKCU. These are the locations Autoruns and
+    /// most persistence techniques use; documented Windows registry paths.
+    fn read_startup_items() -> Vec<StartupItem> {
+        const KEYS: &[(isize, &str, &str)] = &[
+            (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKLM\\Run"),
+            (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce", "HKLM\\RunOnce"),
+            (HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM\\WOW6432\\Run"),
+            (HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKCU\\Run"),
+            (HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce", "HKCU\\RunOnce"),
+        ];
+        let mut out = Vec::new();
+        for &(hive, path, label) in KEYS {
+            let Ok(key) = RegKey::predef(hive).open_subkey(path) else {
+                continue;
+            };
+            for (name, val) in key.enum_values().flatten() {
+                out.push(StartupItem {
+                    name,
+                    command: val.to_string(),
+                    location: label.to_string(),
+                });
+            }
+        }
+        out
     }
 
     /// Run winget and return the list of pending updates. winget's table is the
