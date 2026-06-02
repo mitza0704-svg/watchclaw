@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/fullstackit/watchclaw/control-plane/internal/agentless"
@@ -50,6 +52,11 @@ func New(s store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/agentless/scan", h.postAgentlessScan)
 	mux.HandleFunc("POST /v1/scripts/run", h.postScriptRun)
 	mux.HandleFunc("GET /v1/scripts/runs", h.listScriptRuns)
+	mux.HandleFunc("POST /v1/jobs", h.postJob)
+	mux.HandleFunc("GET /v1/jobs", h.listJobs)
+	mux.HandleFunc("POST /v1/patch/apply", h.postPatchApply)
+	mux.HandleFunc("GET /v1/agent/jobs/{hostname}", h.claimJobs)
+	mux.HandleFunc("POST /v1/agent/jobs/{id}/result", h.jobResult)
 	return mux
 }
 
@@ -298,6 +305,135 @@ func (h *Handler) listScriptRuns(w http.ResponseWriter, r *http.Request) {
 		runs = []store.ScriptRun{}
 	}
 	writeJSON(w, http.StatusOK, runs)
+}
+
+// postJob enqueues a command-channel job for an agent to execute in its own
+// machine context. kind "patch" carries a winget package id in command; "script"
+// carries a raw PS/cmd/sh command.
+func (h *Handler) postJob(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Hostname string `json:"hostname"`
+		Kind     string `json:"kind"`
+		Shell    string `json:"shell"`
+		Command  string `json:"command"`
+		CreatedBy string `json:"created_by"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := dec.Decode(&req); err != nil || req.Hostname == "" || req.Command == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hostname and command required"})
+		return
+	}
+	if req.Kind == "" {
+		req.Kind = "script"
+	}
+	if req.Shell == "" {
+		req.Shell = "powershell"
+	}
+	id, err := h.store.EnqueueJob(r.Context(), store.Job{
+		Hostname: req.Hostname, Kind: req.Kind, Shell: req.Shell,
+		Command: req.Command, CreatedBy: req.CreatedBy,
+	})
+	if err != nil {
+		h.logger.Error("enqueue job failed", "host", req.Hostname, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not enqueue job"})
+		return
+	}
+	h.logger.Info("job enqueued", "id", id, "host", req.Hostname, "kind", req.Kind, "by", req.CreatedBy)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "pending"})
+}
+
+// claimJobs is polled by an agent: it atomically claims this host's pending jobs
+// (pending -> running) and returns them to execute.
+func (h *Handler) claimJobs(w http.ResponseWriter, r *http.Request) {
+	host := r.PathValue("hostname")
+	jobs, err := h.store.ClaimJobs(r.Context(), host)
+	if err != nil {
+		h.logger.Error("claim jobs failed", "host", host, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not claim jobs"})
+		return
+	}
+	if jobs == nil {
+		jobs = []store.Job{}
+	}
+	writeJSON(w, http.StatusOK, jobs)
+}
+
+// jobResult is posted by an agent after it finishes a job.
+func (h *Handler) jobResult(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid job id"})
+		return
+	}
+	var res store.JobResult
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20))
+	if err := dec.Decode(&res); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid result payload"})
+		return
+	}
+	if err := h.store.CompleteJob(r.Context(), id, res); err != nil {
+		h.logger.Warn("complete job failed", "id", id, "error", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	h.logger.Info("job completed", "id", id, "status", res.Status, "exit", res.ExitCode)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
+}
+
+// wingetIDPattern restricts patch package ids to winget's id charset, so the
+// id can be interpolated into the agent command with no injection risk.
+var wingetIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-+_]*$`)
+
+// postPatchApply enqueues a winget upgrade as a command-channel job. The agent
+// runs it in its machine/user context — the path that actually works for winget
+// (agentless WinRM cannot, by platform design). package_id "all" upgrades every
+// pending package; otherwise it must be a valid winget id.
+func (h *Handler) postPatchApply(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Hostname  string `json:"hostname"`
+		PackageID string `json:"package_id"`
+		CreatedBy string `json:"created_by"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := dec.Decode(&req); err != nil || req.Hostname == "" || req.PackageID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hostname and package_id required"})
+		return
+	}
+	flags := "--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
+	var cmd string
+	if req.PackageID == "all" {
+		cmd = "winget upgrade --all " + flags
+	} else if wingetIDPattern.MatchString(req.PackageID) {
+		cmd = "winget upgrade --id " + req.PackageID + " --exact " + flags
+	} else {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid package_id"})
+		return
+	}
+	id, err := h.store.EnqueueJob(r.Context(), store.Job{
+		Hostname: req.Hostname, Kind: "patch", Shell: "powershell",
+		Command: cmd, CreatedBy: req.CreatedBy,
+	})
+	if err != nil {
+		h.logger.Error("enqueue patch failed", "host", req.Hostname, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not enqueue patch"})
+		return
+	}
+	h.logger.Info("patch enqueued", "id", id, "host", req.Hostname, "pkg", req.PackageID, "by", req.CreatedBy)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "pending", "package": req.PackageID})
+}
+
+// listJobs returns the command-channel job history (audit) for the dashboard.
+func (h *Handler) listJobs(w http.ResponseWriter, r *http.Request) {
+	jobs, err := h.store.ListJobs(r.Context(), 100)
+	if err != nil {
+		h.logger.Error("list jobs failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not list jobs"})
+		return
+	}
+	if jobs == nil {
+		jobs = []store.Job{}
+	}
+	writeJSON(w, http.StatusOK, jobs)
 }
 
 func (h *Handler) getTopology(w http.ResponseWriter, r *http.Request) {

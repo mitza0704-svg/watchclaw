@@ -13,3 +13,12 @@ pub fn post_json<T: Serialize>(url: &str, body: &T) -> Result<u16, String> {
         Err(e) => Err(format!("transport error: {e}")),
     }
 }
+
+/// GET a URL and decode the JSON body into T. Used by the agent to poll for jobs.
+pub fn get_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, String> {
+    match ureq::get(url).call() {
+        Ok(resp) => resp.into_json::<T>().map_err(|e| format!("decode error: {e}")),
+        Err(ureq::Error::Status(code, _)) => Err(format!("server returned status {code}")),
+        Err(e) => Err(format!("transport error: {e}")),
+    }
+}

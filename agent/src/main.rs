@@ -13,6 +13,7 @@ mod collector;
 mod discovery;
 mod fingerprint;
 mod inventory;
+mod jobs;
 mod mdns;
 mod model;
 mod oui;
@@ -50,6 +51,23 @@ fn run_loop(base: Option<&str>) {
     // Network scan is expensive (~40-60s for a /24) and intrusive, so run it on a
     // slower cadence than telemetry. SCAN_EVERY cycles between scans.
     const SCAN_EVERY: u64 = 10;
+
+    // The command channel polls on its OWN fast cadence in a separate thread so a
+    // queued job is picked up promptly even while the main loop is mid-scan
+    // (a /24 scan blocks for ~40-60s). Default 5s, override WATCHCLAW_JOB_INTERVAL.
+    if let Some(b) = base {
+        let job_url = b.to_string();
+        let job_interval = std::env::var("WATCHCLAW_JOB_INTERVAL")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(5);
+        std::thread::spawn(move || loop {
+            jobs::poll_and_run(&job_url);
+            std::thread::sleep(std::time::Duration::from_secs(job_interval));
+        });
+        println!("command channel polling every {job_interval}s");
+    }
+
     println!("agent loop started (telemetry every {interval}s, scan every {}s)", interval * SCAN_EVERY);
     let mut tick: u64 = 0;
     loop {

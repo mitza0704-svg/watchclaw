@@ -90,6 +90,35 @@ type ScriptRun struct {
 	RanAt      string `json:"ran_at"`
 }
 
+// Job is a unit of work dispatched to an agent and executed in the agent's own
+// machine context (the command channel). Unlike agentless WinRM, this reaches
+// the endpoint through its installed agent — required for actions that need a
+// real user/session context (e.g. winget), and the foundation for patch deploy,
+// agent-side scripting and self-healing. Lifecycle: pending -> running -> done|failed.
+type Job struct {
+	ID         int64  `json:"id"`
+	Hostname   string `json:"hostname"`           // target agent (matches telemetry hostname)
+	Kind       string `json:"kind"`               // script | patch
+	Shell      string `json:"shell"`              // powershell | cmd | sh
+	Command    string `json:"command"`            // command/spec to execute
+	Status     string `json:"status"`             // pending | running | done | failed
+	ExitCode   int    `json:"exit_code"`
+	Stdout     string `json:"stdout,omitempty"`
+	Stderr     string `json:"stderr,omitempty"`
+	CreatedBy  string `json:"created_by,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	StartedAt  string `json:"started_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+}
+
+// JobResult is what an agent reports back after executing a job.
+type JobResult struct {
+	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	Status   string `json:"status"` // done | failed
+}
+
 type Store interface {
 	SaveReport(ctx context.Context, r model.EndpointReport) error
 	ListEndpoints(ctx context.Context) ([]EndpointSummary, error)
@@ -100,6 +129,10 @@ type Store interface {
 	LatestReport(ctx context.Context, hostname string) (json.RawMessage, error)
 	SaveScriptRun(ctx context.Context, run ScriptRun) (int64, error)
 	ListScriptRuns(ctx context.Context, limit int) ([]ScriptRun, error)
+	EnqueueJob(ctx context.Context, j Job) (int64, error)
+	ClaimJobs(ctx context.Context, hostname string) ([]Job, error)
+	CompleteJob(ctx context.Context, id int64, res JobResult) error
+	ListJobs(ctx context.Context, limit int) ([]Job, error)
 	Close() error
 }
 
@@ -172,6 +205,23 @@ CREATE TABLE IF NOT EXISTS script_runs (
 	ran_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_script_runs_host ON script_runs(hostname, id);
+
+CREATE TABLE IF NOT EXISTS jobs (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	hostname    TEXT NOT NULL,
+	kind        TEXT NOT NULL,
+	shell       TEXT NOT NULL,
+	command     TEXT NOT NULL,
+	status      TEXT NOT NULL DEFAULT 'pending',
+	exit_code   INTEGER NOT NULL DEFAULT 0,
+	stdout      TEXT,
+	stderr      TEXT,
+	created_by  TEXT,
+	created_at  TEXT NOT NULL,
+	started_at  TEXT,
+	finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_claim ON jobs(hostname, status, id);
 `)
 	if err != nil {
 		return fmt.Errorf("init schema: %w", err)
@@ -478,6 +528,127 @@ FROM script_runs ORDER BY id DESC LIMIT ?`, limit)
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// EnqueueJob queues a job for an agent to pick up on its next poll.
+func (s *SQLiteStore) EnqueueJob(ctx context.Context, j Job) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO jobs(hostname, kind, shell, command, status, created_by, created_at)
+		 VALUES(?, ?, ?, ?, 'pending', ?, ?)`,
+		j.Hostname, j.Kind, j.Shell, j.Command, j.CreatedBy, now)
+	if err != nil {
+		return 0, fmt.Errorf("insert job: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+// ClaimJobs atomically transitions an agent's pending jobs to running and
+// returns them. It selects the pending rows, then flips them to running BY ID
+// (guarded on status='pending'), so a job is never handed to two pollers — and
+// it does not rely on timestamps, which collide at RFC3339 second resolution.
+func (s *SQLiteStore) ClaimJobs(ctx context.Context, hostname string) ([]Job, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin claim tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, hostname, kind, shell, command FROM jobs
+		 WHERE hostname=? AND status='pending' ORDER BY id`, hostname)
+	if err != nil {
+		return nil, fmt.Errorf("claim select: %w", err)
+	}
+	var out []Job
+	for rows.Next() {
+		var j Job
+		if err := rows.Scan(&j.ID, &j.Hostname, &j.Kind, &j.Shell, &j.Command); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan job: %w", err)
+		}
+		j.Status = "running"
+		out = append(out, j)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, tx.Commit()
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, j := range out {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE jobs SET status='running', started_at=? WHERE id=? AND status='pending'`,
+			now, j.ID); err != nil {
+			return nil, fmt.Errorf("claim update %d: %w", j.ID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit claim: %w", err)
+	}
+	return out, nil
+}
+
+// CompleteJob records an agent's result for a running job.
+func (s *SQLiteStore) CompleteJob(ctx context.Context, id int64, res JobResult) error {
+	status := res.Status
+	if status != "done" && status != "failed" {
+		status = "done"
+	}
+	stdout, _ := clampStore(res.Stdout)
+	stderr, _ := clampStore(res.Stderr)
+	now := time.Now().UTC().Format(time.RFC3339)
+	r, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status=?, exit_code=?, stdout=?, stderr=?, finished_at=? WHERE id=?`,
+		status, res.ExitCode, stdout, stderr, now, id)
+	if err != nil {
+		return fmt.Errorf("complete job: %w", err)
+	}
+	n, _ := r.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("job %d not found", id)
+	}
+	return nil
+}
+
+// ListJobs returns recent jobs (newest first) for the dashboard/audit.
+func (s *SQLiteStore) ListJobs(ctx context.Context, limit int) ([]Job, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, hostname, kind, shell, command, status, exit_code, stdout, stderr, created_by, created_at, started_at, finished_at
+FROM jobs ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Job
+	for rows.Next() {
+		var j Job
+		var stdout, stderr, createdBy, startedAt, finishedAt sql.NullString
+		if err := rows.Scan(&j.ID, &j.Hostname, &j.Kind, &j.Shell, &j.Command, &j.Status,
+			&j.ExitCode, &stdout, &stderr, &createdBy, &j.CreatedAt, &startedAt, &finishedAt); err != nil {
+			return nil, fmt.Errorf("scan job: %w", err)
+		}
+		j.Stdout, j.Stderr, j.CreatedBy = stdout.String, stderr.String, createdBy.String
+		j.StartedAt, j.FinishedAt = startedAt.String, finishedAt.String
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// clampStore bounds a captured stream stored from a job result.
+func clampStore(s string) (string, bool) {
+	const max = 64 * 1024
+	if len(s) <= max {
+		return s, false
+	}
+	return "...[truncated]...\n" + s[len(s)-max:], true
 }
 
 func (s *SQLiteStore) Close() error { return s.db.Close() }
