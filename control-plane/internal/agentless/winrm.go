@@ -29,47 +29,19 @@ import (
 // so a missing cmdlet (older Windows) yields null instead of aborting the run.
 // Output keys match the EndpointReport wire format + hardware sub-keys the
 // dashboard already renders (services/startup_items/connections/software).
-const inventoryPS = `
-$ErrorActionPreference='Continue'; $ProgressPreference='SilentlyContinue'
-function S($b){ try{ & $b }catch{ $null } }
-$os=S{Get-CimInstance Win32_OperatingSystem}; $cs=S{Get-CimInstance Win32_ComputerSystem}
-$bios=S{Get-CimInstance Win32_BIOS}; $bb=S{Get-CimInstance Win32_BaseBoard}
-$cpu=S{Get-CimInstance Win32_Processor | Select-Object -First 1}
-$memTotalMB=if($cs){[uint64][math]::Round($cs.TotalPhysicalMemory/1MB)}else{0}
-$memFreeMB=if($os){[uint64][math]::Round($os.FreePhysicalMemory/1KB)}else{0}
-$memUsedMB=[uint64]([math]::Max(0,$memTotalMB-$memFreeMB))
-$load=S{ (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average }
-function SW {
- $r=@(); $p=@('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
- foreach($k in $p){ S{ Get-ItemProperty $k -EA SilentlyContinue | Where-Object {$_.DisplayName} | ForEach-Object {
-   $r+=[ordered]@{name=$_.DisplayName; version=[string]$_.DisplayVersion; publisher=[string]$_.Publisher} } } }
- ,$r }
-$disks=@(S{ Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object {
-  $t=[math]::Round($_.Size/1GB,2); $f=[math]::Round($_.FreeSpace/1GB,2)
-  [ordered]@{mount=$_.DeviceID; total_gb=$t; used_gb=[math]::Round($t-$f,2); usage_pct=if($t){[math]::Round(($t-$f)/$t*100,1)}else{0}} })
-$svc=@(S{ Get-CimInstance Win32_Service | Where-Object {$_.StartMode -eq 'Auto'} | ForEach-Object {
-  [ordered]@{name=$_.Name; display_name=$_.DisplayName; state=$_.State; start_mode=$_.StartMode; path=[string]$_.PathName} })
-$start=@(); 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' | ForEach-Object {
-  $loc=$_; $kk=S{Get-ItemProperty $_ -EA SilentlyContinue}; if($kk){ $kk.PSObject.Properties | Where-Object {$_.Name -notlike 'PS*'} | ForEach-Object {
-    $start+=[ordered]@{name=$_.Name; command=[string]$_.Value; location=$loc} } } }
-$conns=@(S{ Get-NetTCPConnection -State Listen,Established -EA SilentlyContinue | ForEach-Object {
-  $pn=S{ (Get-Process -Id $_.OwningProcess -EA SilentlyContinue).ProcessName }
-  [ordered]@{local=("{0}:{1}" -f $_.LocalAddress,$_.LocalPort); remote=("{0}:{1}" -f $_.RemoteAddress,$_.RemotePort); state=$_.State.ToString(); pid=[int]$_.OwningProcess; process=[string]$pn} })
-$hot=@(S{ Get-HotFix | ForEach-Object {[string]$_.HotFixID} })
-[ordered]@{
- hostname=if($cs){$cs.Name}else{$env:COMPUTERNAME}
- os='Windows'; os_version=if($os){$os.Version}else{''}; kernel_version=if($os){$os.Caption}else{''}
- cpu_cores=if($cpu){[int]$cpu.NumberOfLogicalProcessors}else{0}
- cpu_usage_pct=if($load){[double]$load}else{0}
- mem_total_mb=$memTotalMB; mem_used_mb=$memUsedMB; mem_usage_pct=if($memTotalMB){[math]::Round($memUsedMB/$memTotalMB*100,1)}else{0}
- uptime_seconds=if($os){[int]((Get-Date)-$os.LastBootUpTime).TotalSeconds}else{0}
- disks=$disks
- hardware=[ordered]@{
-   system=[ordered]@{manufacturer=if($cs){[string]$cs.Manufacturer}else{''}; model=if($cs){[string]$cs.Model}else{''}; bios_serial=if($bios){[string]$bios.SerialNumber}else{''}; baseboard_serial=if($bb){[string]$bb.SerialNumber}else{''}}
-   software=SW; hotfixes=$hot; services=$svc; startup_items=$start; connections=$conns; source='agentless-winrm'
- }
-} | ConvertTo-Json -Depth 6 -Compress
-`
+// Minified so the UTF-16LE+base64 -EncodedCommand stays under cmd.exe's ~8191
+// char limit. Keys match the EndpointReport wire shape + dashboard hardware keys.
+const inventoryPS = `$ErrorActionPreference='Continue';$ProgressPreference='SilentlyContinue'
+function S($b){try{&$b}catch{$null}}
+$o=S{Get-CimInstance Win32_OperatingSystem};$c=S{Get-CimInstance Win32_ComputerSystem};$bi=S{Get-CimInstance Win32_BIOS};$bb=S{Get-CimInstance Win32_BaseBoard};$cp=S{Get-CimInstance Win32_Processor|Select-Object -First 1}
+$mt=if($c){[uint64][math]::Round($c.TotalPhysicalMemory/1MB)}else{0};$mf=if($o){[uint64][math]::Round($o.FreePhysicalMemory/1KB)}else{0};$mu=[uint64]([math]::Max(0,$mt-$mf))
+$ld=S{(Get-CimInstance Win32_Processor|Measure-Object -Property LoadPercentage -Average).Average}
+$sw=@();foreach($k in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')){Get-ItemProperty $k -EA 0|Where-Object{$_.DisplayName}|ForEach-Object{$sw+=@{name=$_.DisplayName;version=[string]$_.DisplayVersion;publisher=[string]$_.Publisher}}}
+$dk=@(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -EA 0|ForEach-Object{$t=[math]::Round($_.Size/1GB,2);$f=[math]::Round($_.FreeSpace/1GB,2);@{mount=$_.DeviceID;total_gb=$t;used_gb=[math]::Round($t-$f,2);usage_pct=if($t){[math]::Round(($t-$f)/$t*100,1)}else{0}}})
+$sv=@(Get-CimInstance Win32_Service -EA 0|Where-Object{$_.StartMode -eq 'Auto'}|ForEach-Object{@{name=$_.Name;display_name=$_.DisplayName;state=$_.State;start_mode=$_.StartMode;path=[string]$_.PathName}})
+$st=@();'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'|ForEach-Object{$l=$_;$k=Get-ItemProperty $_ -EA 0;if($k){$k.PSObject.Properties|Where-Object{$_.Name -notlike 'PS*'}|ForEach-Object{$st+=@{name=$_.Name;command=[string]$_.Value;location=$l}}}}
+$cn=@(Get-NetTCPConnection -State Listen,Established -EA 0|ForEach-Object{$pn=S{(Get-Process -Id $_.OwningProcess -EA 0).ProcessName};@{local=("{0}:{1}"-f $_.LocalAddress,$_.LocalPort);remote=("{0}:{1}"-f $_.RemoteAddress,$_.RemotePort);state=$_.State.ToString();pid=[int]$_.OwningProcess;process=[string]$pn}})
+@{hostname=if($c){$c.Name}else{$env:COMPUTERNAME};os='Windows';os_version=if($o){$o.Version}else{''};kernel_version=if($o){$o.Caption}else{''};cpu_cores=if($cp){[int]$cp.NumberOfLogicalProcessors}else{0};cpu_usage_pct=if($ld){[double]$ld}else{0};mem_total_mb=$mt;mem_used_mb=$mu;mem_usage_pct=if($mt){[math]::Round($mu/$mt*100,1)}else{0};uptime_seconds=if($o){[int]((Get-Date)-$o.LastBootUpTime).TotalSeconds}else{0};disks=$dk;hardware=@{system=@{manufacturer=if($c){[string]$c.Manufacturer}else{''};model=if($c){[string]$c.Model}else{''};bios_serial=if($bi){[string]$bi.SerialNumber}else{''};baseboard_serial=if($bb){[string]$bb.SerialNumber}else{''}};software=$sw;hotfixes=@(Get-HotFix -EA 0|ForEach-Object{[string]$_.HotFixID});services=$sv;startup_items=$st;connections=$cn;source='agentless-winrm'}}|ConvertTo-Json -Depth 6 -Compress`
 
 // ScanWindows connects to a remote Windows host over WinRM and returns a parsed
 // EndpointReport. port=5985 (http) or 5986 (https+insecure for self-signed);
