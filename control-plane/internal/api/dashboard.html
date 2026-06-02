@@ -59,6 +59,19 @@
   .mini .mut { color:var(--muted); }
   .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; }
   .empty { color:var(--muted); font-size:12px; }
+  #detail .cards { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+  #detail .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:11px 14px; min-width:118px; flex:1; }
+  #detail .card .num { font-size:22px; font-weight:600; line-height:1.1; }
+  #detail .card .lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-top:3px; }
+  #detail .card .sub { font-size:11px; color:var(--muted); margin-top:3px; }
+  details.acc { background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:10px; }
+  details.acc > summary { list-style:none; cursor:pointer; padding:11px 14px; display:flex; align-items:center; gap:8px; font-size:12px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:600; }
+  details.acc > summary::-webkit-details-marker { display:none; }
+  details.acc > summary::before { content:"▸"; color:var(--muted); display:inline-block; transition:transform .15s; }
+  details.acc[open] > summary::before { transform:rotate(90deg); }
+  details.acc > summary .n { color:var(--accent); }
+  details.acc .body { padding:0 14px 12px; }
+  .dot-ext { color:var(--crit); }
   @media (max-width:640px){ header h1{font-size:13px} .legend{font-size:10px;left:10px;right:10px;bottom:10px} td,th{padding:7px} }
 </style>
 </head>
@@ -113,7 +126,7 @@ const COLORS = {
   media:"#e07cf0", iot:"#f59e6c", device:"#8a93a5"
 };
 const HEALTH = { ok:"#3dd68c", warning:"#f0a23d", critical:"#f0506b" };
-let cy = null, view = "topo";
+let cy = null, view = "topo", prevView = "ep";
 
 function pad(n){ return String(n).padStart(2,"0"); }
 function hm(){ const d=new Date(); return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds()); }
@@ -277,6 +290,7 @@ function fmtUptime(s){ s=s||0; return Math.floor(s/86400)+"d "+Math.floor(s%8640
 function pct(v){ return (v==null?0:v).toFixed(0); }
 
 async function openDetail(hostEnc){
+  if (view && view!=="detail") prevView=view;
   view="detail";
   ["cy","endpoints","alerts-view","legend"].forEach(id=>document.getElementById(id).style.display="none");
   const el=document.getElementById("detail"); el.style.display="block";
@@ -289,25 +303,70 @@ async function openDetail(hostEnc){
   } catch(e){ el.innerHTML+='<div class="empty">error: '+esc(e.message)+'</div>'; }
 }
 
+function isPriv(ip){ return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1|fe80|169\.254|fd|fc)/i.test(ip||""); }
+function ipOf(addr){ const a=String(addr||""); const i=a.lastIndexOf(":"); return i>0?a.slice(0,i):a; }
+function card(num,lbl,color,sub){
+  return '<div class="card"><div class="num"'+(color?' style="color:'+color+'"':'')+'>'+num+'</div>'+
+    '<div class="lbl">'+esc(lbl)+'</div>'+(sub?'<div class="sub">'+sub+'</div>':'')+'</div>';
+}
+// collapsible accordion section; open=true expands by default
+function acc(title,n,rowsHtml,open){
+  if(!n) return '<details class="acc"><summary>'+esc(title)+' <span class="n">0</span></summary><div class="body"><div class="empty">none</div></div></details>';
+  return '<details class="acc"'+(open?' open':'')+'><summary>'+esc(title)+' <span class="n">'+n+'</span></summary>'+
+    '<div class="body"><table class="mini"><tbody>'+rowsHtml+'</tbody></table></div></details>';
+}
+
 function renderDetail(el,d){
   const h=d.hardware||{}, sys=h.system||{}, conns=h.connections||[];
   const est=conns.filter(c=>c.state==="Established"), lis=conns.filter(c=>c.state==="Listen");
-  let html='<span class="back" onclick="show(\'ep\')">&lsaquo; back to endpoints</span>';
+  const ups=h.available_updates||[], svcs=h.services||[], starts=h.startup_items||[];
+  const ext=est.filter(c=>!isPriv(ipOf(c.remote)));         // external connections = anomaly surface
+  const worstDisk=pct(d.disk_usage_pct), health=d.health||"ok";
+
+  let html='<span class="back" onclick="show(\''+(prevView||"ep")+'\')">&lsaquo; back</span>';
   html+='<h2>'+esc(d.hostname)+'</h2>';
   html+='<div class="meta">'+esc(d.os)+' '+esc(d.os_version)+(sys.model?' · '+esc(sys.model):"")+' · collected '+esc((d.collected_at||"").replace("T"," ").replace("Z",""))+'</div>';
-  html+='<div class="sec"><h3>System</h3><div class="kv">'+
+
+  // --- summary cards (Atera-style, scannable; counts not dumps) ---
+  html+='<div class="cards">'+
+    card(health, "Health", HEALTH[health]||"")+
+    card(pct(d.cpu_usage_pct)+"·"+pct(d.mem_usage_pct)+"·"+worstDisk, "CPU·RAM·Disk %", null,
+      "cpu / ram / disk")+
+    card(ups.length, "Updates pending", ups.length?HEALTH.warning:HEALTH.ok)+
+    card(est.length, "Connections", null, ext.length?('<span class="dot-ext">'+ext.length+' external</span>'):"all internal")+
+    card(lis.length, "Listening", null, "open ports")+
+    card(svcs.length, "Auto-svc", null, "persistent")+
+  '</div>';
+
+  // --- system (open) ---
+  html+='<details class="acc" open><summary>System</summary><div class="body"><div class="kv">'+
     kv("Model",sys.model)+kv("Manufacturer",sys.manufacturer)+kv("BIOS serial",sys.bios_serial)+kv("Baseboard serial",sys.baseboard_serial)+
     kv("CPU",(d.cpu_cores||"?")+" cores · "+pct(d.cpu_usage_pct)+"%")+
     kv("Memory",pct(d.mem_usage_pct)+"% ("+Math.round((d.mem_used_mb||0)/1024)+"/"+Math.round((d.mem_total_mb||0)/1024)+" GB)")+
-    kv("Uptime",fmtUptime(d.uptime_seconds))+'</div></div>';
-  html+=secList("Pending updates",(h.available_updates||[]).length,(h.available_updates||[]).map(u=>'<tr><td>'+esc(u.id||u.name)+'</td><td class="mut">'+esc(u.current)+' → '+esc(u.available)+'</td></tr>').join(""));
-  html+=secList("Established connections",est.length,est.map(c=>'<tr><td class="mono">'+esc(c.local)+' → '+esc(c.remote)+'</td><td class="mut">'+esc(c.process)+'</td></tr>').join(""));
-  html+=secList("Listening ports",lis.length,lis.map(c=>'<tr><td class="mono">'+esc(c.local)+'</td><td class="mut">'+esc(c.process)+'</td></tr>').join(""));
-  html+=secList("Auto-start services",(h.services||[]).length,(h.services||[]).map(s=>'<tr><td>'+esc(s.name)+' <span class="mut">'+esc(s.state)+'</span></td><td class="mut mono">'+esc(s.path)+'</td></tr>').join(""));
-  html+=secList("Startup items",(h.startup_items||[]).length,(h.startup_items||[]).map(s=>'<tr><td>'+esc(s.name)+' <span class="mut">'+esc(s.location)+'</span></td><td class="mut mono">'+esc(s.command)+'</td></tr>').join(""));
-  html+='<div class="sec"><h3>Inventory</h3><div class="kv">'+
-    kv("Software",(h.software||[]).length)+kv("USB devices",(h.usb_devices||[]).length)+kv("Hotfixes",(h.hotfixes||[]).length)+kv("SMART warnings",(h.disk_health_warnings||[]).length)+'</div></div>';
+    kv("Disk",worstDisk+"%")+kv("Uptime",fmtUptime(d.uptime_seconds))+'</div></div></details>';
+
+  // --- updates (open if any) ---
+  html+=accUpd(ups);
+  // --- connections: external first (highlighted), then internal. Collapsed. ---
+  const connRows = est.slice().sort((a,b)=>(isPriv(ipOf(a.remote))?1:0)-(isPriv(ipOf(b.remote))?1:0)).map(c=>{
+    const x=!isPriv(ipOf(c.remote));
+    return '<tr><td class="mono">'+(x?'<span class="dot-ext">● </span>':'')+esc(c.local)+' → '+esc(c.remote)+'</td><td class="mut">'+esc(c.process)+'</td></tr>';
+  }).join("");
+  html+='<details class="acc"><summary>Established connections <span class="n">'+est.length+'</span>'+
+    (ext.length?' <span class="dot-ext" style="text-transform:none;letter-spacing:0">· '+ext.length+' external</span>':'')+'</summary>'+
+    '<div class="body">'+(est.length?'<table class="mini"><tbody>'+connRows+'</tbody></table>':'<div class="empty">none</div>')+'</div></details>';
+  // --- listening, services, startup, software (collapsed) ---
+  html+=acc("Listening ports",lis.length,lis.map(c=>'<tr><td class="mono">'+esc(c.local)+'</td><td class="mut">'+esc(c.process)+'</td></tr>').join(""),false);
+  html+=acc("Auto-start services",svcs.length,svcs.map(s=>'<tr><td>'+esc(s.name)+' <span class="mut">'+esc(s.state)+'</span></td><td class="mut mono">'+esc(s.path)+'</td></tr>').join(""),false);
+  html+=acc("Startup items",starts.length,starts.map(s=>'<tr><td>'+esc(s.name)+' <span class="mut">'+esc(s.location)+'</span></td><td class="mut mono">'+esc(s.command)+'</td></tr>').join(""),starts.length<=8);
+  html+=acc("Installed software",(h.software||[]).length,(h.software||[]).map(s=>'<tr><td>'+esc(s.name)+'</td><td class="mut">'+esc(s.version)+'</td></tr>').join(""),false);
+  html+=acc("USB devices",(h.usb_devices||[]).length,(h.usb_devices||[]).map(u=>'<tr><td>'+esc(u.name)+'</td><td class="mut mono">'+esc(u.vid)+":"+esc(u.pid)+'</td></tr>').join(""),false);
+  if((h.disk_health_warnings||[]).length) html+=acc("SMART warnings",h.disk_health_warnings.length,h.disk_health_warnings.map(w=>'<tr><td class="dot-ext">'+esc(w)+'</td></tr>').join(""),true);
+
   el.innerHTML=html;
+}
+function accUpd(ups){
+  return acc("Pending updates",ups.length,ups.map(u=>'<tr><td>'+esc(u.id||u.name)+'</td><td class="mut">'+esc(u.current)+' → '+esc(u.available)+'</td></tr>').join(""),ups.length>0&&ups.length<=12);
 }
 
 async function refresh(){
