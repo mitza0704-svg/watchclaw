@@ -20,6 +20,11 @@ await p.evaluate(() => window.openDetail && openDetail('DESKTOP-CI'));
 await p.waitForTimeout(1200);
 await p.screenshot({ path: 'shots/endpoint-detail.png', fullPage: true });
 
+await p.goto(BASE + '/app', { waitUntil: 'networkidle' });
+await p.evaluate(() => window.show && show('sc'));
+await p.waitForTimeout(700);
+await shot('scripts');
+
 await p.goto(BASE + '/', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1200);
 await p.screenshot({ path: 'shots/landing.png', fullPage: true });

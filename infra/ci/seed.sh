@@ -38,4 +38,11 @@ curl -fsS -X POST "$B/v1/telemetry" -H 'content-type: application/json' -d '{
    {"local":"0.0.0.0:3389","remote":"0.0.0.0:0","state":"Listen","pid":7,"process":"svchost.exe"}
   ]}}' >/dev/null
 
+# Seed the remote-execution audit trail. 127.0.0.1:1 refuses instantly, so this
+# records a "failed" run (no WinRM target in CI) — enough to render the Scripts
+# audit table and exercise the audit-on-failure path. Best-effort.
+curl -fsS -X POST "$B/v1/scripts/run" -H 'content-type: application/json' -d '{
+ "host":"127.0.0.1","port":1,"user":"ci","pass":"x","shell":"powershell","script":"Get-Service Spooler","ran_by":"ci-seed"
+}' >/dev/null 2>&1 || true
+
 echo "seeded $B"

@@ -48,6 +48,8 @@ func New(s store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/discovery", h.postDiscovery)
 	mux.HandleFunc("GET /v1/topology", h.getTopology)
 	mux.HandleFunc("POST /v1/agentless/scan", h.postAgentlessScan)
+	mux.HandleFunc("POST /v1/scripts/run", h.postScriptRun)
+	mux.HandleFunc("GET /v1/scripts/runs", h.listScriptRuns)
 	return mux
 }
 
@@ -216,6 +218,86 @@ func (h *Handler) postAgentlessScan(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logger.Info("agentless scan stored", "host", req.Host, "hostname", report.Hostname)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "hostname": report.Hostname, "source": "agentless-winrm"})
+}
+
+// postScriptRun executes a remote PowerShell/cmd command on a Windows host over
+// WinRM and records the result in the audit trail (script_runs) — ALWAYS, even
+// when dispatch fails. This is the core RMM remote-action primitive.
+// SECURITY: same posture as agentless scan — credentials in the request body,
+// trusted-network only. Move to Vault + per-site scoping + operator auth before
+// exposing beyond the LAN/Tailscale.
+func (h *Handler) postScriptRun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		HTTPS    bool   `json:"https"`
+		Insecure bool   `json:"insecure"`
+		User     string `json:"user"`
+		Pass     string `json:"pass"`
+		Shell    string `json:"shell"`  // powershell (default) | cmd
+		Script   string `json:"script"` // command to execute
+		RanBy    string `json:"ran_by"` // operator label (optional, audited)
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := dec.Decode(&req); err != nil || req.Host == "" || req.User == "" || req.Script == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "host, user, pass, script required"})
+		return
+	}
+	if req.Shell == "" {
+		req.Shell = "powershell"
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	defer cancel()
+
+	conn := agentless.Conn{Host: req.Host, Port: req.Port, HTTPS: req.HTTPS, Insecure: req.Insecure, User: req.User, Pass: req.Pass}
+	res, runErr := agentless.RunScript(ctx, conn, req.Shell, req.Script)
+
+	// Audit FIRST — record the attempt regardless of outcome.
+	audit := store.ScriptRun{
+		Hostname:   req.Host,
+		Shell:      req.Shell,
+		Script:     req.Script,
+		ExitCode:   res.ExitCode,
+		Stdout:     res.Stdout,
+		Stderr:     res.Stderr,
+		DurationMs: res.DurationMs,
+		Status:     "ok",
+		RanBy:      req.RanBy,
+	}
+	if runErr != nil {
+		audit.Status = "failed"
+		audit.Error = runErr.Error()
+	}
+	id, saveErr := h.store.SaveScriptRun(ctx, audit)
+	if saveErr != nil {
+		h.logger.Error("script audit save failed", "host", req.Host, "error", saveErr)
+	}
+
+	if runErr != nil {
+		h.logger.Warn("script run failed", "host", req.Host, "shell", req.Shell, "error", runErr)
+		writeJSON(w, http.StatusBadGateway, map[string]any{"run_id": id, "status": "failed", "error": runErr.Error()})
+		return
+	}
+	h.logger.Info("script run", "host", req.Host, "shell", req.Shell, "exit", res.ExitCode, "ms", res.DurationMs, "by", req.RanBy)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"run_id": id, "status": "ok", "exit_code": res.ExitCode,
+		"stdout": res.Stdout, "stderr": res.Stderr,
+		"duration_ms": res.DurationMs, "truncated": res.Truncated,
+	})
+}
+
+// listScriptRuns returns the remote-execution audit trail, newest first.
+func (h *Handler) listScriptRuns(w http.ResponseWriter, r *http.Request) {
+	runs, err := h.store.ListScriptRuns(r.Context(), 100)
+	if err != nil {
+		h.logger.Error("list script runs failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not list script runs"})
+		return
+	}
+	if runs == nil {
+		runs = []store.ScriptRun{}
+	}
+	writeJSON(w, http.StatusOK, runs)
 }
 
 func (h *Handler) getTopology(w http.ResponseWriter, r *http.Request) {

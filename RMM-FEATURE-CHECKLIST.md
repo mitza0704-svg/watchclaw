@@ -12,7 +12,7 @@
 | **Agentless credentialed scan** | ✅ WinRM (139 software/118 svc dovedit) — *peste mulți competitori* |
 | Patch management OS + third-party | 🟡 winget **detectează** update-uri; **deploy ❌** |
 | Software deployment | ❌ |
-| Scripting PowerShell/Bash | ❌ |
+| Scripting PowerShell/Bash | ✅ remote exec WinRM (PS/cmd) + audit trail complet — *dovedit pe Asus, exit-code+stderr capturate* |
 | Automation policies / self-healing | ❌ |
 | **Remote access** (unattended/attended) | ❌ (plan: MeshCentral + RustDesk — validat de doc) |
 | File/process/service manager (live) | 🟡 inventar da; management live ❌ |

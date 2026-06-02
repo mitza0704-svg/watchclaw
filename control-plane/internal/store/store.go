@@ -72,6 +72,24 @@ type Alert struct {
 	LastSeen  string  `json:"last_seen"`
 }
 
+// ScriptRun is one audited remote command execution. Every remote script run
+// is recorded here (success or failure) — the audit trail is non-negotiable for
+// an RMM that runs arbitrary commands on customer endpoints.
+type ScriptRun struct {
+	ID         int64  `json:"id"`
+	Hostname   string `json:"hostname"`   // target host as addressed (ip/name)
+	Shell      string `json:"shell"`      // powershell | cmd
+	Script     string `json:"script"`     // exact command executed
+	ExitCode   int    `json:"exit_code"`  // remote process exit code
+	Stdout     string `json:"stdout"`     // captured (bounded) output
+	Stderr     string `json:"stderr"`     // captured (bounded) error stream
+	DurationMs int64  `json:"duration_ms"`
+	Status     string `json:"status"` // ok | failed (transport/dispatch error)
+	Error      string `json:"error,omitempty"`
+	RanBy      string `json:"ran_by"` // operator/actor (best-effort, from request)
+	RanAt      string `json:"ran_at"`
+}
+
 type Store interface {
 	SaveReport(ctx context.Context, r model.EndpointReport) error
 	ListEndpoints(ctx context.Context) ([]EndpointSummary, error)
@@ -80,6 +98,8 @@ type Store interface {
 	ListAlerts(ctx context.Context) ([]Alert, error)
 	EvaluateOffline(ctx context.Context, threshold time.Duration) error
 	LatestReport(ctx context.Context, hostname string) (json.RawMessage, error)
+	SaveScriptRun(ctx context.Context, run ScriptRun) (int64, error)
+	ListScriptRuns(ctx context.Context, limit int) ([]ScriptRun, error)
 	Close() error
 }
 
@@ -136,6 +156,22 @@ CREATE TABLE IF NOT EXISTS alerts (
 	last_seen  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts(status, hostname, kind);
+
+CREATE TABLE IF NOT EXISTS script_runs (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	hostname    TEXT NOT NULL,
+	shell       TEXT NOT NULL,
+	script      TEXT NOT NULL,
+	exit_code   INTEGER NOT NULL DEFAULT 0,
+	stdout      TEXT,
+	stderr      TEXT,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	status      TEXT NOT NULL,
+	error       TEXT,
+	ran_by      TEXT,
+	ran_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_script_runs_host ON script_runs(hostname, id);
 `)
 	if err != nil {
 		return fmt.Errorf("init schema: %w", err)
@@ -399,6 +435,49 @@ func (s *SQLiteStore) LatestReport(ctx context.Context, hostname string) (json.R
 		return nil, fmt.Errorf("query latest report: %w", err)
 	}
 	return json.RawMessage(payload), nil
+}
+
+// SaveScriptRun persists one audited remote execution and returns its row id.
+func (s *SQLiteStore) SaveScriptRun(ctx context.Context, run ScriptRun) (int64, error) {
+	if run.RanAt == "" {
+		run.RanAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO script_runs(hostname, shell, script, exit_code, stdout, stderr, duration_ms, status, error, ran_by, ran_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		run.Hostname, run.Shell, run.Script, run.ExitCode, run.Stdout, run.Stderr,
+		run.DurationMs, run.Status, run.Error, run.RanBy, run.RanAt)
+	if err != nil {
+		return 0, fmt.Errorf("insert script_run: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+// ListScriptRuns returns the most recent audited executions, newest first.
+func (s *SQLiteStore) ListScriptRuns(ctx context.Context, limit int) ([]ScriptRun, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, hostname, shell, script, exit_code, stdout, stderr, duration_ms, status, error, ran_by, ran_at
+FROM script_runs ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query script_runs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ScriptRun
+	for rows.Next() {
+		var r ScriptRun
+		var stdout, stderr, errStr, ranBy sql.NullString
+		if err := rows.Scan(&r.ID, &r.Hostname, &r.Shell, &r.Script, &r.ExitCode,
+			&stdout, &stderr, &r.DurationMs, &r.Status, &errStr, &ranBy, &r.RanAt); err != nil {
+			return nil, fmt.Errorf("scan script_run: %w", err)
+		}
+		r.Stdout, r.Stderr, r.Error, r.RanBy = stdout.String, stderr.String, errStr.String, ranBy.String
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLiteStore) Close() error { return s.db.Close() }

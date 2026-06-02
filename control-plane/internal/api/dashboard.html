@@ -22,6 +22,19 @@
   .view { width:100%; height:calc(100vh - 51px); }
   #cy { width:100%; height:100%; touch-action:none; }
   #endpoints { display:none; overflow:auto; padding:14px; }
+  #scripts-view { display:none; overflow:auto; padding:14px; }
+  .sc-form { max-width:880px; margin-bottom:18px; }
+  .sc-warn { color:#f0a23d; font-size:12px; margin-bottom:9px; }
+  .sc-row { display:flex; gap:7px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+  .sc-form input, .sc-form select, .sc-form textarea {
+    background:var(--panel); color:var(--txt); border:1px solid var(--line);
+    border-radius:7px; padding:7px 9px; font-size:13px; font-family:inherit; }
+  .sc-form input { flex:1; min-width:120px; }
+  .sc-form textarea { width:100%; box-sizing:border-box; font-family:ui-monospace,Consolas,monospace; resize:vertical; }
+  #sc-run { background:#3dd68c; color:#06281a; border:none; font-weight:600; cursor:pointer; padding:8px 18px; border-radius:7px; }
+  #sc-run:disabled { opacity:.5; cursor:default; }
+  #sc-out { background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:10px;
+    font-family:ui-monospace,Consolas,monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; max-height:280px; overflow:auto; margin-top:8px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { text-align:left; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.4px; padding:8px 10px; border-bottom:1px solid var(--line); }
   td { padding:10px; border-bottom:1px solid #161b22; }
@@ -87,6 +100,7 @@
     <span class="tab active" id="tab-topo" onclick="show('topo')">Topology</span>
     <span class="tab" id="tab-ep" onclick="show('ep')">Endpoints</span>
     <span class="tab" id="tab-al" onclick="show('al')">Alerts</span>
+    <span class="tab" id="tab-sc" onclick="show('sc')">Scripts</span>
   </div>
   <a href="/progress" style="color:#5b8cff;text-decoration:none;font-size:12px;margin-left:10px">Progress ↗</a>
   <span class="sub" id="meta">loading…</span>
@@ -103,6 +117,27 @@
 <div class="view" id="alerts-view"><table id="al-table"><thead><tr>
   <th>Severity</th><th>Host</th><th>Type</th><th>Detail</th><th>Since</th><th>Last seen</th>
 </tr></thead><tbody id="al-body"></tbody></table></div>
+<div class="view" id="scripts-view">
+  <div class="sc-form">
+    <div class="sc-warn">⚠ Remote command execution — every run is audited below. Trusted-network only.</div>
+    <div class="sc-row">
+      <input id="sc-host" placeholder="target host / IP" autocomplete="off">
+      <input id="sc-port" placeholder="5985" value="5985" style="max-width:84px">
+      <input id="sc-user" placeholder="admin user" autocomplete="off">
+      <input id="sc-pass" type="password" placeholder="password" autocomplete="off">
+      <select id="sc-shell"><option value="powershell">PowerShell</option><option value="cmd">cmd</option></select>
+    </div>
+    <textarea id="sc-script" rows="4" placeholder="Get-Service | Where-Object Status -eq 'Stopped'"></textarea>
+    <div class="sc-row">
+      <button id="sc-run" onclick="runScript()">▶ Run</button>
+      <span id="sc-status" class="mut"></span>
+    </div>
+    <pre id="sc-out" style="display:none"></pre>
+  </div>
+  <table id="sc-table"><thead><tr>
+    <th>#</th><th>When</th><th>Host</th><th>Shell</th><th>Exit</th><th>ms</th><th>By</th><th>Command</th>
+  </tr></thead><tbody id="sc-body"></tbody></table>
+</div>
 <div class="view" id="detail"></div>
 <div id="topo-detail">
   <div id="td-x" onclick="hideTopoDetail()">×</div>
@@ -144,12 +179,14 @@ function show(v){
   document.getElementById("cy").style.display = v==="topo" ? "block" : "none";
   document.getElementById("endpoints").style.display = v==="ep" ? "block" : "none";
   document.getElementById("alerts-view").style.display = v==="al" ? "block" : "none";
+  document.getElementById("scripts-view").style.display = v==="sc" ? "block" : "none";
   document.getElementById("detail").style.display = v==="detail" ? "block" : "none";
   document.getElementById("legend").style.display = v==="topo" ? "block" : "none";
   document.getElementById("topo-layers").style.display = v==="topo" ? "flex" : "none";
   document.getElementById("tab-topo").classList.toggle("active", v==="topo");
   document.getElementById("tab-ep").classList.toggle("active", v==="ep");
   document.getElementById("tab-al").classList.toggle("active", v==="al");
+  document.getElementById("tab-sc").classList.toggle("active", v==="sc");
   refresh();
 }
 
@@ -433,11 +470,54 @@ function accUpd(ups){
   return acc("Pending updates",ups.length,ups.map(u=>'<tr><td>'+esc(u.id||u.name)+'</td><td class="mut">'+esc(u.current)+' → '+esc(u.available)+'</td></tr>').join(""),ups.length>0&&ups.length<=12);
 }
 
+async function loadScripts(){
+  const runs = await (await fetch("/v1/scripts/runs",{cache:"no-store"})).json();
+  const body = document.getElementById("sc-body");
+  if (!runs || !runs.length){ body.innerHTML = '<tr><td colspan="8" style="color:#7a8596">No script runs yet.</td></tr>'; }
+  else body.innerHTML = runs.map(r => {
+    const okColor = r.status!=="ok" ? HEALTH.critical : (r.exit_code===0 ? HEALTH.ok : HEALTH.warning);
+    const when = (r.ran_at||"").replace("T"," ").replace("Z","");
+    const cmd = (r.script||"").replace(/\s+/g," ").slice(0,70);
+    return '<tr><td>'+r.id+'</td><td style="color:#7a8596">'+esc(when)+'</td>'+
+      '<td class="host">'+esc(r.hostname)+'</td><td style="color:#7a8596">'+esc(r.shell)+'</td>'+
+      '<td style="color:'+okColor+'">'+(r.status==="ok"?r.exit_code:"ERR")+'</td>'+
+      '<td style="color:#7a8596">'+(r.duration_ms||0)+'</td><td style="color:#7a8596">'+esc(r.ran_by||"—")+'</td>'+
+      '<td class="mono" style="color:#9ba5b8">'+esc(cmd)+'</td></tr>';
+  }).join("");
+  document.getElementById("meta").textContent = (runs?runs.length:0)+" script runs · "+hm();
+}
+
+async function runScript(){
+  const btn=document.getElementById("sc-run"), st=document.getElementById("sc-status"), out=document.getElementById("sc-out");
+  const body={
+    host:document.getElementById("sc-host").value.trim(),
+    port:parseInt(document.getElementById("sc-port").value,10)||5985,
+    user:document.getElementById("sc-user").value.trim(),
+    pass:document.getElementById("sc-pass").value,
+    shell:document.getElementById("sc-shell").value,
+    script:document.getElementById("sc-script").value,
+    ran_by:"dashboard"
+  };
+  if(!body.host||!body.user||!body.script){ st.textContent="host, user and script required"; return; }
+  btn.disabled=true; st.textContent="running…"; out.style.display="none";
+  try {
+    const res=await fetch("/v1/scripts/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const r=await res.json();
+    out.style.display="block";
+    if(r.status==="ok"){
+      st.textContent="exit "+r.exit_code+" · "+r.duration_ms+"ms"+(r.truncated?" (truncated)":"");
+      out.textContent=(r.stdout||"")+(r.stderr?("\n--- stderr ---\n"+r.stderr):"");
+    } else { st.textContent="failed"; out.textContent=r.error||"error"; }
+  } catch(e){ st.textContent="error: "+e.message; }
+  finally { btn.disabled=false; loadScripts(); }
+}
+
 async function refresh(){
   try {
     if (view==="detail") { updateAlertBadge(); return; }
     if (view==="ep") await loadEndpoints();
     else if (view==="al") await loadAlerts();
+    else if (view==="sc") await loadScripts();
     else await loadTopology();
     updateAlertBadge();
   }

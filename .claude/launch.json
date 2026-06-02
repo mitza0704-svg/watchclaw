@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8899", "--directory", "control-plane/internal/api"],
       "port": 8899
+    },
+    {
+      "name": "watchclaw-cp",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "echo reuse-running-server"],
+      "port": 8799
     }
   ]
 }

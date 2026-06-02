@@ -43,18 +43,39 @@ $st=@();'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKCU:\SOFTWARE\Mi
 $cn=@(Get-NetTCPConnection -State Listen,Established -EA 0|ForEach-Object{$pn=S{(Get-Process -Id $_.OwningProcess -EA 0).ProcessName};@{local=("{0}:{1}"-f $_.LocalAddress,$_.LocalPort);remote=("{0}:{1}"-f $_.RemoteAddress,$_.RemotePort);state=$_.State.ToString();pid=[int]$_.OwningProcess;process=[string]$pn}})
 @{hostname=if($c){$c.Name}else{$env:COMPUTERNAME};os='Windows';os_version=if($o){$o.Version}else{''};kernel_version=if($o){$o.Caption}else{''};cpu_cores=if($cp){[int]$cp.NumberOfLogicalProcessors}else{0};cpu_usage_pct=if($ld){[double]$ld}else{0};mem_total_mb=$mt;mem_used_mb=$mu;mem_usage_pct=if($mt){[math]::Round($mu/$mt*100,1)}else{0};uptime_seconds=if($o){[int]((Get-Date)-$o.LastBootUpTime).TotalSeconds}else{0};disks=$dk;hardware=@{system=@{manufacturer=if($c){[string]$c.Manufacturer}else{''};model=if($c){[string]$c.Model}else{''};bios_serial=if($bi){[string]$bi.SerialNumber}else{''};baseboard_serial=if($bb){[string]$bb.SerialNumber}else{''}};software=$sw;hotfixes=@(Get-HotFix -EA 0|ForEach-Object{[string]$_.HotFixID});services=$sv;startup_items=$st;connections=$cn;source='agentless-winrm'}}|ConvertTo-Json -Depth 6 -Compress`
 
+// Conn describes how to reach a remote Windows host over WinRM/WS-Man.
+// port=5985 (http) or 5986 (https; set Insecure for a self-signed cert).
+// User/Pass is a local admin (workgroup) or domain user.
+type Conn struct {
+	Host     string
+	Port     int
+	HTTPS    bool
+	Insecure bool
+	User     string
+	Pass     string
+}
+
+// newClient builds a per-call WinRM client. A fresh client per scan/run is
+// required: masterzen's NTLM transport is NOT goroutine-safe on a shared client.
+func newClient(c Conn) (*winrm.Client, error) {
+	port := c.Port
+	if port == 0 {
+		port = 5985
+	}
+	ep := winrm.NewEndpoint(c.Host, port, c.HTTPS, c.Insecure, nil, nil, nil, 30*time.Second)
+	params := winrm.DefaultParameters
+	params.TransportDecorator = func() winrm.Transporter { return &winrm.ClientNTLM{} }
+	params.Timeout = "PT180S"
+	params.EnvelopeSize = 8 * 1024 * 1024
+	return winrm.NewClientWithParameters(ep, c.User, c.Pass, params)
+}
+
 // ScanWindows connects to a remote Windows host over WinRM and returns a parsed
 // EndpointReport. port=5985 (http) or 5986 (https+insecure for self-signed);
 // user/pass is a local admin (workgroup) or domain user.
 func ScanWindows(ctx context.Context, host string, port int, https, insecure bool, user, pass string) (model.EndpointReport, error) {
 	var zero model.EndpointReport
-	ep := winrm.NewEndpoint(host, port, https, insecure, nil, nil, nil, 30*time.Second)
-	params := winrm.DefaultParameters
-	params.TransportDecorator = func() winrm.Transporter { return &winrm.ClientNTLM{} }
-	params.Timeout = "PT180S"
-	params.EnvelopeSize = 8 * 1024 * 1024
-
-	client, err := winrm.NewClientWithParameters(ep, user, pass, params)
+	client, err := newClient(Conn{Host: host, Port: port, HTTPS: https, Insecure: insecure, User: user, Pass: pass})
 	if err != nil {
 		return zero, fmt.Errorf("winrm client: %w", err)
 	}
