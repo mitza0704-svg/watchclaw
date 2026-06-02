@@ -38,6 +38,21 @@
   .legend b { color:var(--txt); font-weight:600; display:block; margin-bottom:5px; }
   .legend span { display:inline-flex; align-items:center; gap:5px; margin-right:11px; }
   .legend i { width:9px; height:9px; border-radius:3px; display:inline-block; }
+  #endpoints tbody tr { cursor:pointer; }
+  #detail { display:none; overflow:auto; padding:14px 16px; }
+  #detail .back { color:#5b8cff; cursor:pointer; font-size:12px; display:inline-block; margin-bottom:12px; }
+  #detail h2 { font-size:18px; margin:0 0 2px; }
+  #detail .meta { color:var(--muted); font-size:12px; margin-bottom:16px; }
+  .sec { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .sec h3 { font-size:12px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin:0 0 9px; font-weight:600; }
+  .sec h3 .n { color:var(--accent); }
+  .kv { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:6px 18px; font-size:13px; }
+  .kv div span { color:var(--muted); }
+  .mini { width:100%; font-size:12px; }
+  .mini td { padding:5px 8px; border-bottom:1px solid #161b22; vertical-align:top; }
+  .mini .mut { color:var(--muted); }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; }
+  .empty { color:var(--muted); font-size:12px; }
   @media (max-width:640px){ header h1{font-size:13px} .legend{font-size:10px;left:10px;right:10px;bottom:10px} td,th{padding:7px} }
 </style>
 </head>
@@ -61,6 +76,7 @@
 <div class="view" id="alerts-view"><table id="al-table"><thead><tr>
   <th>Severity</th><th>Host</th><th>Type</th><th>Detail</th><th>Since</th><th>Last seen</th>
 </tr></thead><tbody id="al-body"></tbody></table></div>
+<div class="view" id="detail"></div>
 
 <div class="legend" id="legend">
   <b>Legend</b>
@@ -94,6 +110,7 @@ function show(v){
   document.getElementById("cy").style.display = v==="topo" ? "block" : "none";
   document.getElementById("endpoints").style.display = v==="ep" ? "block" : "none";
   document.getElementById("alerts-view").style.display = v==="al" ? "block" : "none";
+  document.getElementById("detail").style.display = v==="detail" ? "block" : "none";
   document.getElementById("legend").style.display = v==="topo" ? "block" : "none";
   document.getElementById("tab-topo").classList.toggle("active", v==="topo");
   document.getElementById("tab-ep").classList.toggle("active", v==="ep");
@@ -111,9 +128,9 @@ async function loadEndpoints(){
   const eps = await (await fetch("/v1/endpoints",{cache:"no-store"})).json();
   const body = document.getElementById("ep-body");
   if (!eps || !eps.length){ body.innerHTML = '<tr><td colspan="7" style="color:#7a8596">No endpoints reporting yet…</td></tr>'; return; }
-  body.innerHTML = eps.map(e => '<tr>'+
+  body.innerHTML = eps.map(e => '<tr onclick="openDetail(\''+encodeURIComponent(e.hostname)+'\')">'+
     '<td><span class="badge '+e.health+'">'+e.health+'</span></td>'+
-    '<td class="host">'+e.hostname+'</td>'+
+    '<td class="host">'+e.hostname+' <span style="color:#5b8cff;font-size:11px">details ›</span></td>'+
     '<td style="color:#7a8596">'+(e.os||"")+' '+(e.os_version||"")+'</td>'+
     '<td>'+bar(e.cpu_usage_pct, barColor(e.cpu_usage_pct))+'</td>'+
     '<td>'+bar(e.mem_usage_pct, barColor(e.mem_usage_pct))+'</td>'+
@@ -178,8 +195,52 @@ async function updateAlertBadge(){
   } catch(e){ /* badge is best-effort */ }
 }
 
+function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function kv(k,v){ return '<div><span>'+esc(k)+':</span> '+esc(v===0?0:(v||"—"))+'</div>'; }
+function secList(title,n,rows){
+  if(!n) return '<div class="sec"><h3>'+esc(title)+' <span class="n">0</span></h3><div class="empty">none</div></div>';
+  return '<div class="sec"><h3>'+esc(title)+' <span class="n">'+n+'</span></h3><table class="mini"><tbody>'+rows+'</tbody></table></div>';
+}
+function fmtUptime(s){ s=s||0; return Math.floor(s/86400)+"d "+Math.floor(s%86400/3600)+"h"; }
+function pct(v){ return (v==null?0:v).toFixed(0); }
+
+async function openDetail(hostEnc){
+  view="detail";
+  ["cy","endpoints","alerts-view","legend"].forEach(id=>document.getElementById(id).style.display="none");
+  const el=document.getElementById("detail"); el.style.display="block";
+  const host=decodeURIComponent(hostEnc);
+  el.innerHTML='<span class="back" onclick="show(\'ep\')">&lsaquo; back to endpoints</span><div class="empty">loading '+esc(host)+'…</div>';
+  document.getElementById("meta").textContent=host;
+  try {
+    const d=await (await fetch("/v1/endpoint/"+hostEnc,{cache:"no-store"})).json();
+    renderDetail(el,d);
+  } catch(e){ el.innerHTML+='<div class="empty">error: '+esc(e.message)+'</div>'; }
+}
+
+function renderDetail(el,d){
+  const h=d.hardware||{}, sys=h.system||{}, conns=h.connections||[];
+  const est=conns.filter(c=>c.state==="Established"), lis=conns.filter(c=>c.state==="Listen");
+  let html='<span class="back" onclick="show(\'ep\')">&lsaquo; back to endpoints</span>';
+  html+='<h2>'+esc(d.hostname)+'</h2>';
+  html+='<div class="meta">'+esc(d.os)+' '+esc(d.os_version)+(sys.model?' · '+esc(sys.model):"")+' · collected '+esc((d.collected_at||"").replace("T"," ").replace("Z",""))+'</div>';
+  html+='<div class="sec"><h3>System</h3><div class="kv">'+
+    kv("Model",sys.model)+kv("Manufacturer",sys.manufacturer)+kv("BIOS serial",sys.bios_serial)+kv("Baseboard serial",sys.baseboard_serial)+
+    kv("CPU",(d.cpu_cores||"?")+" cores · "+pct(d.cpu_usage_pct)+"%")+
+    kv("Memory",pct(d.mem_usage_pct)+"% ("+Math.round((d.mem_used_mb||0)/1024)+"/"+Math.round((d.mem_total_mb||0)/1024)+" GB)")+
+    kv("Uptime",fmtUptime(d.uptime_seconds))+'</div></div>';
+  html+=secList("Pending updates",(h.available_updates||[]).length,(h.available_updates||[]).map(u=>'<tr><td>'+esc(u.id||u.name)+'</td><td class="mut">'+esc(u.current)+' → '+esc(u.available)+'</td></tr>').join(""));
+  html+=secList("Established connections",est.length,est.map(c=>'<tr><td class="mono">'+esc(c.local)+' → '+esc(c.remote)+'</td><td class="mut">'+esc(c.process)+'</td></tr>').join(""));
+  html+=secList("Listening ports",lis.length,lis.map(c=>'<tr><td class="mono">'+esc(c.local)+'</td><td class="mut">'+esc(c.process)+'</td></tr>').join(""));
+  html+=secList("Auto-start services",(h.services||[]).length,(h.services||[]).map(s=>'<tr><td>'+esc(s.name)+' <span class="mut">'+esc(s.state)+'</span></td><td class="mut mono">'+esc(s.path)+'</td></tr>').join(""));
+  html+=secList("Startup items",(h.startup_items||[]).length,(h.startup_items||[]).map(s=>'<tr><td>'+esc(s.name)+' <span class="mut">'+esc(s.location)+'</span></td><td class="mut mono">'+esc(s.command)+'</td></tr>').join(""));
+  html+='<div class="sec"><h3>Inventory</h3><div class="kv">'+
+    kv("Software",(h.software||[]).length)+kv("USB devices",(h.usb_devices||[]).length)+kv("Hotfixes",(h.hotfixes||[]).length)+kv("SMART warnings",(h.disk_health_warnings||[]).length)+'</div></div>';
+  el.innerHTML=html;
+}
+
 async function refresh(){
   try {
+    if (view==="detail") { updateAlertBadge(); return; }
     if (view==="ep") await loadEndpoints();
     else if (view==="al") await loadAlerts();
     else await loadTopology();

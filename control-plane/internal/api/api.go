@@ -41,6 +41,7 @@ func New(s store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("POST /v1/telemetry", h.postTelemetry)
 	mux.HandleFunc("GET /v1/endpoints", h.listEndpoints)
+	mux.HandleFunc("GET /v1/endpoint/{host}", h.getEndpoint)
 	mux.HandleFunc("GET /v1/alerts", h.listAlerts)
 	mux.HandleFunc("POST /v1/discovery", h.postDiscovery)
 	mux.HandleFunc("GET /v1/topology", h.getTopology)
@@ -127,6 +128,22 @@ func (h *Handler) listEndpoints(w http.ResponseWriter, r *http.Request) {
 		endpoints = []store.EndpointSummary{}
 	}
 	writeJSON(w, http.StatusOK, endpoints)
+}
+
+func (h *Handler) getEndpoint(w http.ResponseWriter, r *http.Request) {
+	host := r.PathValue("host")
+	payload, err := h.store.LatestReport(r.Context(), host)
+	if err != nil {
+		h.logger.Error("latest report failed", "host", host, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load endpoint"})
+		return
+	}
+	if payload == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "endpoint not found"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(payload)
 }
 
 func (h *Handler) listAlerts(w http.ResponseWriter, r *http.Request) {

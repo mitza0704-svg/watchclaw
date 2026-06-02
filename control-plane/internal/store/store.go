@@ -79,6 +79,7 @@ type Store interface {
 	LatestScan(ctx context.Context) (*model.NetworkScan, error)
 	ListAlerts(ctx context.Context) ([]Alert, error)
 	EvaluateOffline(ctx context.Context, threshold time.Duration) error
+	LatestReport(ctx context.Context, hostname string) (json.RawMessage, error)
 	Close() error
 }
 
@@ -383,6 +384,21 @@ ORDER BY t.hostname`)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// LatestReport returns the most recent raw telemetry payload for a host — the
+// full agent report (metrics + deep hardware/services/connections inventory).
+func (s *SQLiteStore) LatestReport(ctx context.Context, hostname string) (json.RawMessage, error) {
+	var payload string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT payload FROM telemetry WHERE hostname=? ORDER BY id DESC LIMIT 1`, hostname).Scan(&payload)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query latest report: %w", err)
+	}
+	return json.RawMessage(payload), nil
 }
 
 func (s *SQLiteStore) Close() error { return s.db.Close() }
