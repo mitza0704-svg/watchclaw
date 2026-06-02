@@ -22,7 +22,7 @@
   .view { width:100%; height:calc(100vh - 51px); }
   #cy { width:100%; height:100%; touch-action:none; }
   #endpoints { display:none; overflow:auto; padding:14px; }
-  #scripts-view { display:none; overflow:auto; padding:14px; }
+  #scripts-view, #jobs-view { display:none; overflow:auto; padding:14px; }
   .sc-form { max-width:880px; margin-bottom:18px; }
   .sc-warn { color:#f0a23d; font-size:12px; margin-bottom:9px; }
   .sc-row { display:flex; gap:7px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
@@ -31,8 +31,11 @@
     border-radius:7px; padding:7px 9px; font-size:13px; font-family:inherit; }
   .sc-form input { flex:1; min-width:120px; }
   .sc-form textarea { width:100%; box-sizing:border-box; font-family:ui-monospace,Consolas,monospace; resize:vertical; }
-  #sc-run { background:#3dd68c; color:#06281a; border:none; font-weight:600; cursor:pointer; padding:8px 18px; border-radius:7px; }
-  #sc-run:disabled { opacity:.5; cursor:default; }
+  #sc-run, #jb-run { background:#3dd68c; color:#06281a; border:none; font-weight:600; cursor:pointer; padding:8px 18px; border-radius:7px; }
+  #sc-run:disabled, #jb-run:disabled { opacity:.5; cursor:default; }
+  .patch-btn { background:transparent; color:#3dd68c; border:1px solid #2c7a55; border-radius:6px; padding:3px 12px; font-size:12px; cursor:pointer; }
+  .patch-btn:hover { background:rgba(61,214,140,.12); }
+  .patch-btn.all { color:#06281a; background:#3dd68c; border:none; font-weight:600; padding:6px 14px; }
   #sc-out { background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:10px;
     font-family:ui-monospace,Consolas,monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; max-height:280px; overflow:auto; margin-top:8px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
@@ -101,6 +104,7 @@
     <span class="tab" id="tab-ep" onclick="show('ep')">Endpoints</span>
     <span class="tab" id="tab-al" onclick="show('al')">Alerts</span>
     <span class="tab" id="tab-sc" onclick="show('sc')">Scripts</span>
+    <span class="tab" id="tab-jb" onclick="show('jb')">Jobs</span>
   </div>
   <a href="/progress" style="color:#5b8cff;text-decoration:none;font-size:12px;margin-left:10px">Progress ↗</a>
   <span class="sub" id="meta">loading…</span>
@@ -137,6 +141,23 @@
   <table id="sc-table"><thead><tr>
     <th>#</th><th>When</th><th>Host</th><th>Shell</th><th>Exit</th><th>ms</th><th>By</th><th>Command</th>
   </tr></thead><tbody id="sc-body"></tbody></table>
+</div>
+<div class="view" id="jobs-view">
+  <div class="sc-form">
+    <div class="sc-warn">⚙ Command channel — jobs run via the endpoint's installed agent (its own context). Reaches winget where agentless cannot.</div>
+    <div class="sc-row">
+      <input id="jb-host" placeholder="target hostname (e.g. zmfbot)" autocomplete="off">
+      <select id="jb-shell"><option value="powershell">PowerShell</option><option value="cmd">cmd</option><option value="sh">sh</option></select>
+    </div>
+    <textarea id="jb-cmd" rows="3" placeholder="Restart-Service Spooler"></textarea>
+    <div class="sc-row">
+      <button id="jb-run" onclick="enqueueJob()">▶ Enqueue</button>
+      <span id="jb-status" class="mut"></span>
+    </div>
+  </div>
+  <table id="jb-table"><thead><tr>
+    <th>#</th><th>Created</th><th>Host</th><th>Kind</th><th>Shell</th><th>Status</th><th>Exit</th><th>By</th><th>Command</th>
+  </tr></thead><tbody id="jb-body"></tbody></table>
 </div>
 <div class="view" id="detail"></div>
 <div id="topo-detail">
@@ -180,6 +201,7 @@ function show(v){
   document.getElementById("endpoints").style.display = v==="ep" ? "block" : "none";
   document.getElementById("alerts-view").style.display = v==="al" ? "block" : "none";
   document.getElementById("scripts-view").style.display = v==="sc" ? "block" : "none";
+  document.getElementById("jobs-view").style.display = v==="jb" ? "block" : "none";
   document.getElementById("detail").style.display = v==="detail" ? "block" : "none";
   document.getElementById("legend").style.display = v==="topo" ? "block" : "none";
   document.getElementById("topo-layers").style.display = v==="topo" ? "flex" : "none";
@@ -187,6 +209,7 @@ function show(v){
   document.getElementById("tab-ep").classList.toggle("active", v==="ep");
   document.getElementById("tab-al").classList.toggle("active", v==="al");
   document.getElementById("tab-sc").classList.toggle("active", v==="sc");
+  document.getElementById("tab-jb").classList.toggle("active", v==="jb");
   refresh();
 }
 
@@ -447,7 +470,7 @@ function renderDetail(el,d){
     kv("Disk",worstDisk+"%")+kv("Uptime",fmtUptime(d.uptime_seconds))+'</div></div></details>';
 
   // --- updates (open if any) ---
-  html+=accUpd(ups);
+  html+=accUpd(ups, d.hostname);
   // --- connections: external first (highlighted), then internal. Collapsed. ---
   const connRows = est.slice().sort((a,b)=>(isPriv(ipOf(a.remote))?1:0)-(isPriv(ipOf(b.remote))?1:0)).map(c=>{
     const x=!isPriv(ipOf(c.remote));
@@ -466,8 +489,18 @@ function renderDetail(el,d){
 
   el.innerHTML=html;
 }
-function accUpd(ups){
-  return acc("Pending updates",ups.length,ups.map(u=>'<tr><td>'+esc(u.id||u.name)+'</td><td class="mut">'+esc(u.current)+' → '+esc(u.available)+'</td></tr>').join(""),ups.length>0&&ups.length<=12);
+// jsArg escapes a string for safe inlining inside a single-quoted JS attribute.
+function jsArg(s){ return String(s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function accUpd(ups, host){
+  if(!ups.length) return acc("Pending updates",0,"",false);
+  const h = jsArg(host);
+  const allBtn = '<tr><td colspan="3" style="padding-bottom:8px"><button class="patch-btn all" onclick="applyPatch(\''+h+'\',\'all\')">⤓ Update all ('+ups.length+')</button></td></tr>';
+  const rows = ups.map(u=>{
+    const id = u.id||u.name||"";
+    const btn = u.id ? '<button class="patch-btn" onclick="applyPatch(\''+h+'\',\''+jsArg(u.id)+'\')">Apply</button>' : '';
+    return '<tr><td>'+esc(id)+'</td><td class="mut">'+esc(u.current)+' → '+esc(u.available)+'</td><td style="text-align:right">'+btn+'</td></tr>';
+  }).join("");
+  return acc("Pending updates",ups.length,allBtn+rows,ups.length>0&&ups.length<=12);
 }
 
 async function loadScripts(){
@@ -512,12 +545,63 @@ async function runScript(){
   finally { btn.disabled=false; loadScripts(); }
 }
 
+const JOB_STATUS_COLOR = { pending:"#7a8596", running:"#f0a23d", done:HEALTH.ok, failed:HEALTH.critical };
+async function loadJobs(){
+  const jobs = await (await fetch("/v1/jobs",{cache:"no-store"})).json();
+  const body = document.getElementById("jb-body");
+  if (!jobs || !jobs.length){ body.innerHTML = '<tr><td colspan="9" style="color:#7a8596">No jobs yet.</td></tr>'; }
+  else body.innerHTML = jobs.map(j => {
+    const sc = JOB_STATUS_COLOR[j.status] || "#7a8596";
+    const exitColor = (j.status==="done") ? (j.exit_code===0?HEALTH.ok:HEALTH.warning) : (j.status==="failed"?HEALTH.critical:"#7a8596");
+    const when = (j.created_at||"").replace("T"," ").replace("Z","");
+    const cmd = (j.command||"").replace(/\s+/g," ").slice(0,60);
+    const exit = (j.status==="done"||j.status==="failed") ? j.exit_code : "—";
+    return '<tr><td>'+j.id+'</td><td style="color:#7a8596">'+esc(when)+'</td>'+
+      '<td class="host">'+esc(j.hostname)+'</td>'+
+      '<td style="color:#7a8596">'+esc(j.kind)+'</td><td style="color:#7a8596">'+esc(j.shell)+'</td>'+
+      '<td style="color:'+sc+';text-transform:uppercase;font-size:11px">'+esc(j.status)+'</td>'+
+      '<td style="color:'+exitColor+'">'+exit+'</td>'+
+      '<td style="color:#7a8596">'+esc(j.created_by||"—")+'</td>'+
+      '<td class="mono" style="color:#9ba5b8">'+esc(cmd)+'</td></tr>';
+  }).join("");
+  document.getElementById("meta").textContent = (jobs?jobs.length:0)+" jobs · "+hm();
+}
+
+async function enqueueJob(){
+  const btn=document.getElementById("jb-run"), st=document.getElementById("jb-status");
+  const body={ hostname:document.getElementById("jb-host").value.trim(),
+    kind:"script", shell:document.getElementById("jb-shell").value,
+    command:document.getElementById("jb-cmd").value, created_by:"dashboard" };
+  if(!body.hostname||!body.command){ st.textContent="hostname and command required"; return; }
+  btn.disabled=true; st.textContent="enqueuing…";
+  try {
+    const res=await fetch("/v1/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const r=await res.json();
+    st.textContent = r.id ? ("queued job #"+r.id+" — agent will run it on next poll") : (r.error||"error");
+    document.getElementById("jb-cmd").value="";
+  } catch(e){ st.textContent="error: "+e.message; }
+  finally { btn.disabled=false; loadJobs(); }
+}
+
+// Apply a pending update by enqueueing a winget patch job for this host.
+async function applyPatch(host, pkg){
+  if(!confirm("Apply update "+pkg+" on "+host+"?\nThe agent will run winget upgrade in its context.")) return;
+  try {
+    const res=await fetch("/v1/patch/apply",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({hostname:host, package_id:pkg, created_by:"dashboard"})});
+    const r=await res.json();
+    if(r.id){ show('jb'); }
+    else alert("patch failed: "+(r.error||"error"));
+  } catch(e){ alert("error: "+e.message); }
+}
+
 async function refresh(){
   try {
     if (view==="detail") { updateAlertBadge(); return; }
     if (view==="ep") await loadEndpoints();
     else if (view==="al") await loadAlerts();
     else if (view==="sc") await loadScripts();
+    else if (view==="jb") await loadJobs();
     else await loadTopology();
     updateAlertBadge();
   }

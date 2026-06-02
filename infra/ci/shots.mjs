@@ -25,6 +25,10 @@ await p.evaluate(() => window.show && show('sc'));
 await p.waitForTimeout(700);
 await shot('scripts');
 
+await p.evaluate(() => window.show && show('jb'));
+await p.waitForTimeout(700);
+await shot('jobs');
+
 await p.goto(BASE + '/', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1200);
 await p.screenshot({ path: 'shots/landing.png', fullPage: true });
