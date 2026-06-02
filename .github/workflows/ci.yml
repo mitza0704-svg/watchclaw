@@ -1,0 +1,70 @@
+name: CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  go:
+    name: control-plane (Go) build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: control-plane/go.mod
+      - working-directory: control-plane
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
+
+  rust:
+    name: agent (Rust) build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - working-directory: agent
+        run: |
+          cargo build --locked || cargo build
+          cargo test
+
+  screenshots:
+    name: dashboard screenshots (real-shaped seed)
+    runs-on: ubuntu-latest
+    needs: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: control-plane/go.mod
+      - name: build control-plane
+        working-directory: control-plane
+        run: go build -o watchclaw-cp .
+      - name: run + seed
+        working-directory: control-plane
+        env:
+          WATCHCLAW_ADDR: ":8787"
+          WATCHCLAW_DB: "ci.db"
+          WATCHCLAW_MONITOR_INTERVAL: "600s"
+          WATCHCLAW_OFFLINE_AFTER: "999m"
+        run: |
+          ./watchclaw-cp &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8787/healthz && break || sleep 0.5; done
+          bash ../infra/ci/seed.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: playwright screenshots
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm i -D playwright >/dev/null 2>&1
+          npx playwright install --with-deps chromium
+          mkdir -p shots
+          node infra/ci/shots.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-screenshots
+          path: shots/
+          if-no-files-found: error
