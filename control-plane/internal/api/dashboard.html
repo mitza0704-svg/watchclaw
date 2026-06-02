@@ -41,6 +41,10 @@
   #topo-detail #td-type { font-size:10px; text-transform:uppercase; letter-spacing:.6px; margin-bottom:4px; }
   #topo-detail #td-label { font-size:16px; font-weight:600; margin-bottom:12px; word-break:break-all; }
   #topo-detail #td-health { margin-bottom:16px; }
+  #topo-layers { position:fixed; top:62px; left:16px; z-index:90; display:none; background:var(--panel);
+    border:1px solid var(--line); border-radius:8px; padding:3px; gap:2px; }
+  #topo-layers span { font-size:11px; color:var(--muted); padding:4px 11px; border-radius:6px; cursor:pointer; }
+  #topo-layers span.on { color:var(--bg); background:var(--accent); font-weight:600; }
   .legend b { color:var(--txt); font-weight:600; display:block; margin-bottom:5px; }
   .legend span { display:inline-flex; align-items:center; gap:5px; margin-right:11px; }
   .legend i { width:9px; height:9px; border-radius:3px; display:inline-block; }
@@ -89,6 +93,10 @@
 </header>
 
 <div class="view" id="cy"></div>
+<div id="topo-layers">
+  <span id="lay-phys" class="on" onclick="setLayer('physical')">Physical</span>
+  <span id="lay-conn" onclick="setLayer('connections')">Connections</span>
+</div>
 <div class="view" id="endpoints"><table id="ep-table"><thead><tr>
   <th>Health</th><th>Host</th><th>OS</th><th>CPU</th><th>RAM</th><th>Disk</th><th>Last seen</th>
 </tr></thead><tbody id="ep-body"></tbody></table></div>
@@ -126,7 +134,7 @@ const COLORS = {
   media:"#e07cf0", iot:"#f59e6c", device:"#8a93a5"
 };
 const HEALTH = { ok:"#3dd68c", warning:"#f0a23d", critical:"#f0506b" };
-let cy = null, view = "topo", prevView = "ep";
+let cy = null, view = "topo", prevView = "ep", topoLayer = "physical";
 
 function pad(n){ return String(n).padStart(2,"0"); }
 function hm(){ const d=new Date(); return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds()); }
@@ -138,6 +146,7 @@ function show(v){
   document.getElementById("alerts-view").style.display = v==="al" ? "block" : "none";
   document.getElementById("detail").style.display = v==="detail" ? "block" : "none";
   document.getElementById("legend").style.display = v==="topo" ? "block" : "none";
+  document.getElementById("topo-layers").style.display = v==="topo" ? "flex" : "none";
   document.getElementById("tab-topo").classList.toggle("active", v==="topo");
   document.getElementById("tab-ep").classList.toggle("active", v==="ep");
   document.getElementById("tab-al").classList.toggle("active", v==="al");
@@ -197,11 +206,22 @@ async function loadTopology(){
   ]);
   const epByHost = {}; (eps||[]).forEach(e => epByHost[e.hostname] = e);
   document.getElementById("meta").textContent = (g.subnet||"—")+" · "+(g.nodes?.length||0)+" devices · "+hm();
+  // ip -> node id (for resolving connection endpoints to topology nodes)
+  const ipNode = {}; (g.nodes||[]).forEach(n => { if (n.ip) ipNode[n.ip] = n.id; });
+  // App-dependency flows: pull per-endpoint connections (the data UniFi can't),
+  // resolve remote IPs to nodes (external -> internet), aggregate as edges.
+  let flows = [];
+  try {
+    const details = await Promise.all((eps||[]).map(e =>
+      fetch("/v1/endpoint/"+encodeURIComponent(e.hostname),{cache:"no-store"}).then(r=>r.json()).catch(()=>null)));
+    flows = buildFlows(details, ipNode);
+  } catch(e){ /* flows are best-effort */ }
   const elements = [
     ...(g.nodes||[]).map(n => { const ep = epByHost[n.label] || {};
       return { data:{ id:n.id, label:n.label, type:n.type, ip:n.ip, mac:n.mac, vendor:n.nic_vendor,
         health: ep.health || "", last_seen: ep.last_seen || "" }}; }),
     ...(g.edges||[]).map(e => ({ data:{ source:e.from, target:e.to, etype:e.type }})),
+    ...flows,
   ];
   const layout = { name:"concentric", concentric: n => n.data("type")==="internet" ? 3 : (n.data("type")==="gateway"||n.data("type")==="router") ? 2 : 1,
     levelWidth: ()=>1, minNodeSpacing: 34, startAngle: Math.PI*3/2, sweep: Math.PI*2, padding: 64, avoidOverlap: true, fit: true };
@@ -226,14 +246,58 @@ async function loadTopology(){
         { selector:"node:active", style:{ "overlay-opacity":0.1,"overlay-color":"#3dd68c" }},
         { selector:"edge", style:{ "width":1,"line-color":"#2d3d52","curve-style":"straight","opacity":1 }},
         { selector:'edge[etype="wan"]', style:{ "line-color":"#5b8cff","width":2,"line-style":"dashed","line-dash-pattern":[6,4] }},
+        { selector:'edge[etype="flow"]', style:{ "line-color":"#3dd68c","width": ele=>Math.min(6,1+(ele.data("count")||1)/4),
+          "opacity":0.85,"curve-style":"bezier","target-arrow-shape":"triangle","target-arrow-color":"#3dd68c","arrow-scale":0.8,"display":"none" }},
       ],
       layout });
     cy.on("tap","node", evt => showTopoDetail(evt.target.data()));
     cy.on("tap", evt => { if (evt.target === cy) hideTopoDetail(); });
   } else {
-    cy.json({ elements });
+    // Replace explicitly — cy.json({elements}) drops edges that lack an id on
+    // the diff-update path, which made spokes vanish after the first refresh.
+    cy.elements().remove();
+    cy.add(elements);
     cy.layout(layout).run();
   }
+  setLayer(topoLayer);
+  document.getElementById("topo-layers").style.display = "flex"; // visible on topo load
+}
+
+// Build app-dependency edges from endpoints' established connections.
+function buildFlows(details, ipNode){
+  const agg = {};
+  (details||[]).filter(Boolean).forEach(d => {
+    const conns = ((d.hardware||{}).connections||[]).filter(c => c.state==="Established");
+    // host's own LAN IP = most frequent private local address
+    const lc = {}; conns.forEach(c => { const ip=ipOf(c.local); if(isPriv(ip)) lc[ip]=(lc[ip]||0)+1; });
+    const hostIp = Object.keys(lc).sort((a,b)=>lc[b]-lc[a])[0];
+    const src = hostIp && ipNode[hostIp];
+    if (!src) return;
+    conns.forEach(c => {
+      const rip = ipOf(c.remote);
+      if (!rip || rip===hostIp) return;
+      const dst = isPriv(rip) ? ipNode[rip] : "internet";
+      if (!dst || dst===src) return;            // skip unknown-private + self
+      const k = src+"|"+dst;
+      if (!agg[k]) agg[k] = { src, dst, count:0, procs:{} };
+      agg[k].count++; if (c.process) agg[k].procs[c.process]=1;
+    });
+  });
+  return Object.values(agg).map(f => ({ data:{ source:f.src, target:f.dst, etype:"flow",
+    count:f.count, label:Object.keys(f.procs).slice(0,3).join(", ") }}));
+}
+
+// Toggle topology layer: physical (gateway star) vs connections (app-dependency).
+function setLayer(l){
+  topoLayer = l;
+  const phys = document.getElementById("lay-phys"), conn = document.getElementById("lay-conn");
+  if (phys) phys.classList.toggle("on", l==="physical");
+  if (conn) conn.classList.toggle("on", l==="connections");
+  if (!cy) return;
+  cy.batch(() => cy.edges().forEach(e => {
+    const isFlow = e.data("etype")==="flow";
+    e.style("display", l==="connections" ? (isFlow?"element":"none") : (isFlow?"none":"element"));
+  }));
 }
 
 function showTopoDetail(d){
