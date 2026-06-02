@@ -1,5 +1,11 @@
 # build artifacts
 agent/target/
+target/
+
+# Node / Playwright (local screenshot tooling only — not part of the product)
+node_modules/
+shots/
+package-lock.json
 control-plane/watchclaw-cp
 control-plane/watchclaw-cp-linux
 control-plane/watchclaw-cp.exe
