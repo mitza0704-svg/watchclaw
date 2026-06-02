@@ -24,9 +24,30 @@ pub fn collect() -> Option<HardwareInventory> {
 
 #[cfg(windows)]
 mod windows {
-    use crate::model::{DiskDrive, HardwareInventory, InstalledApp, ServiceInfo, StartupItem, UsbDevice};
+    use crate::model::{Connection, DiskDrive, HardwareInventory, InstalledApp, ServiceInfo, StartupItem, UsbDevice};
     use serde::Deserialize;
+    use std::collections::HashMap;
     use std::process::Command;
+
+    #[derive(Deserialize)]
+    #[serde(rename = "MSFT_NetTCPConnection")]
+    #[serde(rename_all = "PascalCase")]
+    struct NetTcp {
+        local_address: Option<String>,
+        local_port: Option<u32>,
+        remote_address: Option<String>,
+        remote_port: Option<u32>,
+        state: Option<u32>,
+        owning_process: Option<u32>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename = "Win32_Process")]
+    #[serde(rename_all = "PascalCase")]
+    struct Win32Proc {
+        process_id: Option<u32>,
+        name: Option<String>,
+    }
 
     #[derive(Deserialize)]
     #[serde(rename = "Win32_Service")]
@@ -200,6 +221,41 @@ mod windows {
 
         // Autorun entries (registry Run/RunOnce) — classic persistence surface.
         inv.startup_items = read_startup_items();
+
+        // Active TCP connections (listening + established) with owning process.
+        // MSFT_NetTCPConnection lives in root\StandardCimv2; map PID->name via
+        // Win32_Process (root\cimv2). State 2=Listen, 5=Established.
+        if let Ok(cim) = WMIConnection::with_namespace_path("root\\StandardCimv2", com) {
+            let conns: Vec<NetTcp> = cim
+                .raw_query(
+                    "SELECT LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess \
+                     FROM MSFT_NetTCPConnection",
+                )
+                .unwrap_or_default();
+            let mut pmap: HashMap<u32, String> = HashMap::new();
+            let procs: Vec<Win32Proc> =
+                wmi.raw_query("SELECT ProcessId, Name FROM Win32_Process").unwrap_or_default();
+            for p in procs {
+                if let (Some(id), Some(n)) = (p.process_id, p.name) {
+                    pmap.insert(id, n);
+                }
+            }
+            for c in conns {
+                let state = match c.state {
+                    Some(2) => "Listen",
+                    Some(5) => "Established",
+                    _ => continue, // skip transient/closing states
+                };
+                let pid = c.owning_process.unwrap_or(0);
+                inv.connections.push(Connection {
+                    local: format!("{}:{}", c.local_address.unwrap_or_default(), c.local_port.unwrap_or(0)),
+                    remote: format!("{}:{}", c.remote_address.unwrap_or_default(), c.remote_port.unwrap_or(0)),
+                    state: state.to_string(),
+                    pid,
+                    process: pmap.get(&pid).cloned().unwrap_or_default(),
+                });
+            }
+        }
 
         Ok(inv)
     }

@@ -57,6 +57,20 @@ pub struct HardwareInventory {
     /// Autorun entries (registry Run/RunOnce) — classic persistence surface.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub startup_items: Vec<StartupItem>,
+    /// Active TCP connections (listening + established) with owning process —
+    /// CurrPorts-class visibility for spotting rogue listeners / C2 / exfil.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub connections: Vec<Connection>,
+}
+
+/// One active TCP connection (listening or established) and its owning process.
+#[derive(Debug, Serialize, Default)]
+pub struct Connection {
+    pub local: String,  // ip:port
+    pub remote: String, // ip:port (0.0.0.0:0 for listeners)
+    pub state: String,  // Listen | Established
+    pub pid: u32,
+    pub process: String,
 }
 
 /// An auto-start Windows service. PathName is the binary command line — the
