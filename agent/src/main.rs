@@ -68,18 +68,30 @@ fn run_loop(base: Option<&str>) {
         println!("command channel polling every {job_interval}s");
     }
 
+    // The /24 network scan is slow (~40-160s) and MUST NOT block telemetry — a
+    // scan that runs longer than the offline threshold would make the endpoint
+    // flap to "offline". So the scan runs on its OWN thread with its own cadence;
+    // the main loop does nothing but emit telemetry on a reliable interval.
+    if let Some(b) = base {
+        let scan_url = b.to_string();
+        let scan_interval = interval * SCAN_EVERY;
+        std::thread::spawn(move || {
+            // Let the first telemetry land before the first (slow) scan.
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            loop {
+                let scan = discovery::scan();
+                deliver(Some(&scan_url), "/v1/discovery", &scan, "scan", scan.devices.len());
+                std::thread::sleep(std::time::Duration::from_secs(scan_interval));
+            }
+        });
+    }
+
     println!("agent loop started (telemetry every {interval}s, scan every {}s)", interval * SCAN_EVERY);
-    let mut tick: u64 = 0;
     loop {
-        // Errors are logged inside deliver and intentionally do NOT stop the loop —
-        // a transient network/server hiccup must never kill the agent.
+        // Telemetry only — fast and reliable. Errors are logged inside deliver and
+        // never stop the loop: a transient hiccup must not kill the agent.
         let report = collector::collect();
         deliver(base, "/v1/telemetry", &report, &report.hostname, 1);
-        if tick % SCAN_EVERY == 0 {
-            let scan = discovery::scan();
-            deliver(base, "/v1/discovery", &scan, "scan", scan.devices.len());
-        }
-        tick = tick.wrapping_add(1);
         std::thread::sleep(std::time::Duration::from_secs(interval));
     }
 }
