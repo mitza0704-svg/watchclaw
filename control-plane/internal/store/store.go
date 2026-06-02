@@ -78,6 +78,7 @@ type Store interface {
 	SaveScan(ctx context.Context, s model.NetworkScan) error
 	LatestScan(ctx context.Context) (*model.NetworkScan, error)
 	ListAlerts(ctx context.Context) ([]Alert, error)
+	EvaluateOffline(ctx context.Context, threshold time.Duration) error
 	Close() error
 }
 
@@ -304,6 +305,55 @@ ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END, last_seen DESC`)
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// EvaluateOffline raises an "offline" alert for any endpoint whose most recent
+// telemetry is older than threshold, and resolves it once the endpoint reports
+// again. Called periodically by the control plane's monitor loop — offline is
+// detected by ABSENCE, so it can't be evaluated on report ingest like the
+// resource alerts.
+func (s *SQLiteStore) EvaluateOffline(ctx context.Context, threshold time.Duration) error {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT hostname, MAX(received_at) FROM telemetry GROUP BY hostname`)
+	if err != nil {
+		return fmt.Errorf("query last-seen: %w", err)
+	}
+	type seen struct{ host, last string }
+	var all []seen
+	for rows.Next() {
+		var sv seen
+		if err := rows.Scan(&sv.host, &sv.last); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan last-seen: %w", err)
+		}
+		all = append(all, sv)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339)
+	for _, sv := range all {
+		last, err := time.Parse(time.RFC3339, sv.last)
+		if err != nil {
+			continue // skip unparseable timestamps rather than false-alarm
+		}
+		gap := now.Sub(last)
+		if gap > threshold {
+			mins := gap.Minutes()
+			msg := fmt.Sprintf("No telemetry for %.0f min (last seen %s)", mins, sv.last)
+			if e := s.raiseAlert(ctx, sv.host, "offline", "critical", msg, mins, nowStr); e != nil {
+				return e
+			}
+		} else {
+			if e := s.resolveAlert(ctx, sv.host, "offline", nowStr); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
 }
 
 // ListEndpoints returns the latest report per hostname plus a total report count.

@@ -46,6 +46,14 @@ func main() {
 		}
 	}()
 
+	// Monitor loop: offline endpoints are detected by absence of telemetry, so
+	// a periodic check (not report-time) raises/resolves the "offline" alert.
+	monCtx, monCancel := context.WithCancel(context.Background())
+	defer monCancel()
+	offlineAfter := getdur("WATCHCLAW_OFFLINE_AFTER", 3*time.Minute)
+	monInterval := getdur("WATCHCLAW_MONITOR_INTERVAL", 30*time.Second)
+	go runMonitor(monCtx, st, logger, monInterval, offlineAfter)
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
@@ -54,6 +62,33 @@ func main() {
 	defer cancel()
 	logger.Info("shutting down")
 	_ = srv.Shutdown(ctx)
+}
+
+// runMonitor periodically evaluates offline endpoints until the context is done.
+func runMonitor(ctx context.Context, st store.Store, logger *slog.Logger, interval, offlineAfter time.Duration) {
+	logger.Info("monitor started", "interval", interval, "offline_after", offlineAfter)
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := st.EvaluateOffline(ctx, offlineAfter); err != nil {
+				logger.Warn("offline evaluation failed", "error", err)
+			}
+		}
+	}
+}
+
+// getdur reads a Go duration string from env (e.g. "3m", "30s"), else fallback.
+func getdur(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return fallback
 }
 
 func getenv(key, fallback string) string {
