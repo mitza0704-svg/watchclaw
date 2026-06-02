@@ -12,7 +12,7 @@
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--txt);
     font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; overflow:hidden; }
-  header { display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid var(--line); }
+  header { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--line); }
   header .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent); flex:0 0 auto; }
   header h1 { font-size:14px; font-weight:600; margin:0; letter-spacing:.2px; }
   .tabs { display:flex; gap:4px; margin-left:8px; }
@@ -33,8 +33,14 @@
   .bar { display:inline-block; width:64px; height:6px; border-radius:3px; background:#1e2530; vertical-align:middle; margin-right:7px; overflow:hidden; }
   .bar > i { display:block; height:100%; }
   .host { font-weight:600; }
-  .legend { position:fixed; bottom:14px; left:14px; background:rgba(18,22,29,.92); border:1px solid var(--line);
-    border-radius:10px; padding:9px 12px; font-size:11px; color:var(--muted); backdrop-filter:blur(8px); }
+  .legend { position:fixed; bottom:16px; left:16px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:8px 12px; font-size:11px; color:var(--muted); max-width:calc(100vw - 32px); }
+  #topo-detail { display:none; position:fixed; top:51px; right:0; width:280px; height:calc(100vh - 51px);
+    background:var(--panel); border-left:1px solid var(--line); padding:20px 16px; overflow-y:auto; z-index:100; }
+  #topo-detail #td-x { position:absolute; top:12px; right:14px; cursor:pointer; color:var(--muted); font-size:20px; line-height:1; }
+  #topo-detail #td-type { font-size:10px; text-transform:uppercase; letter-spacing:.6px; margin-bottom:4px; }
+  #topo-detail #td-label { font-size:16px; font-weight:600; margin-bottom:12px; word-break:break-all; }
+  #topo-detail #td-health { margin-bottom:16px; }
   .legend b { color:var(--txt); font-weight:600; display:block; margin-bottom:5px; }
   .legend span { display:inline-flex; align-items:center; gap:5px; margin-right:11px; }
   .legend i { width:9px; height:9px; border-radius:3px; display:inline-block; }
@@ -77,6 +83,13 @@
   <th>Severity</th><th>Host</th><th>Type</th><th>Detail</th><th>Since</th><th>Last seen</th>
 </tr></thead><tbody id="al-body"></tbody></table></div>
 <div class="view" id="detail"></div>
+<div id="topo-detail">
+  <div id="td-x" onclick="hideTopoDetail()">×</div>
+  <div id="td-type"></div>
+  <div id="td-label"></div>
+  <div id="td-health"></div>
+  <div id="td-fields" style="display:grid;gap:9px"></div>
+</div>
 
 <div class="legend" id="legend">
   <b>Legend</b>
@@ -140,30 +153,89 @@ async function loadEndpoints(){
   document.getElementById("meta").textContent = eps.length+" endpoints · "+hm();
 }
 
+// Per-type line-icon glyphs rendered as inline-SVG data-URIs for node background.
+function svgIcon(paths){
+  const svg="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='#e6eaf0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>"+paths+"</svg>";
+  return "data:image/svg+xml,"+encodeURIComponent(svg);
+}
+const ICONS = {
+  internet:    svgIcon("<path d='M6.5 19 A4.5 4.5 0 0 1 6.5 10 A6 6 0 0 1 18 10.5 A3.5 3.5 0 0 1 17.5 17 Z'/><path d='M8 19 L16 19'/>"),
+  gateway:     svgIcon("<path d='M12 3 L20 7.5 L20 16.5 L12 21 L4 16.5 L4 7.5 Z'/><path d='M12 3 L12 21 M4 7.5 L20 7.5 M4 16.5 L20 16.5'/>"),
+  router:      svgIcon("<path d='M12 3 L20 7.5 L20 16.5 L12 21 L4 16.5 L4 7.5 Z'/><path d='M12 3 L12 21 M4 7.5 L20 7.5 M4 16.5 L20 16.5'/>"),
+  network:     svgIcon("<path d='M2 4 L22 4 L22 9 L2 9 Z'/><path d='M6 9 L6 15 M12 9 L12 15 M18 9 L18 15 M4 15 L8 15 M10 15 L14 15 M16 15 L20 15'/>"),
+  workstation: svgIcon("<path d='M5 3 L19 3 Q21 3 21 5 L21 15 Q21 17 19 17 L5 17 Q3 17 3 15 L3 5 Q3 3 5 3 Z'/><path d='M9 17 L9 21 M15 17 L15 21 M7 21 L17 21'/>"),
+  endpoint:    svgIcon("<path d='M5 3 L19 3 Q21 3 21 5 L21 15 Q21 17 19 17 L5 17 Q3 17 3 15 L3 5 Q3 3 5 3 Z'/><path d='M9 17 L9 21 M15 17 L15 21 M7 21 L17 21'/>"),
+  server:      svgIcon("<path d='M3 5 L21 5 L21 9 L3 9 Z'/><path d='M3 10 L21 10 L21 14 L3 14 Z'/><path d='M3 15 L21 15 L21 19 L3 19 Z'/><path d='M17 7 L19 7 M17 12 L19 12 M17 17 L19 17'/>"),
+  printer:     svgIcon("<path d='M6 9 L6 3 L18 3 L18 9'/><path d='M6 18 L4 18 Q3 18 3 17 L3 11 Q3 10 4 10 L20 10 Q21 10 21 11 L21 17 Q21 18 20 18 L18 18'/><path d='M6 18 L6 21 L18 21 L18 18 Z'/>"),
+  nas:         svgIcon("<path d='M3 4 L21 4 L21 20 L3 20 Z'/><path d='M3 8 L21 8 M3 12 L21 12 M3 16 L21 16'/><path d='M7 6 L7.01 6 M7 10 L7.01 10 M7 14 L7.01 14'/>"),
+  camera:      svgIcon("<path d='M23 7 L16 12 L23 17 Z'/><path d='M16 5 L2 5 Q1 5 1 6 L1 18 Q1 19 2 19 L16 19 Q17 19 17 18 L17 6 Q17 5 16 5 Z'/>"),
+  phone:       svgIcon("<path d='M17 2 L7 2 Q5 2 5 4 L5 20 Q5 22 7 22 L17 22 Q19 22 19 20 L19 4 Q19 2 17 2 Z'/><path d='M9 18 L15 18'/>"),
+  media:       svgIcon("<path d='M20 7 L4 7 Q2 7 2 9 L2 17 Q2 19 4 19 L20 19 Q22 19 22 17 L22 9 Q22 7 20 7 Z'/><path d='M8 19 L16 19 M9 11 L15 13 L9 15 Z'/>"),
+  iot:         svgIcon("<path d='M12 12 m-2 0 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0'/><path d='M8.5 8.5 A5 5 0 0 0 8.5 15.5 M15.5 8.5 A5 5 0 0 1 15.5 15.5 M5.5 5.5 A9 9 0 0 0 5.5 18.5 M18.5 5.5 A9 9 0 0 1 18.5 18.5'/>"),
+  device:      svgIcon("<path d='M12 3 L20 8 L20 16 L12 21 L4 16 L4 8 Z'/>"),
+};
+function icon(t){ return ICONS[t] || ICONS.device; }
+function tint(t){ return (COLORS[t]||COLORS.device)+"22"; }   // ~13% type-color fill
+
 async function loadTopology(){
-  const g = await (await fetch("/v1/topology",{cache:"no-store"})).json();
-  document.getElementById("meta").textContent = (g.subnet||"—")+" · "+(g.nodes?.length||0)+" nodes · "+hm();
+  const [g, eps] = await Promise.all([
+    fetch("/v1/topology",{cache:"no-store"}).then(r=>r.json()),
+    fetch("/v1/endpoints",{cache:"no-store"}).then(r=>r.json()).catch(()=>[]),
+  ]);
+  const epByHost = {}; (eps||[]).forEach(e => epByHost[e.hostname] = e);
+  document.getElementById("meta").textContent = (g.subnet||"—")+" · "+(g.nodes?.length||0)+" devices · "+hm();
   const elements = [
-    ...(g.nodes||[]).map(n => ({ data:{ id:n.id, label:n.label, type:n.type }})),
+    ...(g.nodes||[]).map(n => { const ep = epByHost[n.label] || {};
+      return { data:{ id:n.id, label:n.label, type:n.type, ip:n.ip, mac:n.mac, vendor:n.nic_vendor,
+        health: ep.health || "", last_seen: ep.last_seen || "" }}; }),
     ...(g.edges||[]).map(e => ({ data:{ source:e.from, target:e.to, etype:e.type }})),
   ];
+  const layout = { name:"concentric", concentric: n => n.data("type")==="internet" ? 3 : (n.data("type")==="gateway"||n.data("type")==="router") ? 2 : 1,
+    levelWidth: ()=>1, minNodeSpacing: 34, startAngle: Math.PI*3/2, sweep: Math.PI*2, padding: 64, avoidOverlap: true, fit: true };
   if (!cy){
-    cy = cytoscape({ container: document.getElementById("cy"), elements,
+    cy = cytoscape({ container: document.getElementById("cy"), elements, wheelSensitivity:0.2,
       style:[
-        { selector:"node", style:{ "background-color": ele=>COLORS[ele.data("type")]||COLORS.device,
-          "label":"data(label)","color":"#e6eaf0","font-size":"11px","text-valign":"bottom","text-margin-y":"6px",
-          "width":"34px","height":"34px","border-width":"2px","border-color":"#0a0c10" }},
-        { selector:'node[type="internet"]', style:{ "width":"46px","height":"46px" }},
-        { selector:'node[type="gateway"]', style:{ "width":"42px","height":"42px" }},
-        { selector:"edge", style:{ "width":1.5,"line-color":"#2a3340","curve-style":"straight","opacity":0.7 }},
-        { selector:'edge[etype="wan"]', style:{ "line-color":"#5b8cff","width":2.5 }},
+        { selector:"node", style:{
+          "background-color": ele=>tint(ele.data("type")),
+          "background-image": ele=>icon(ele.data("type")), "background-fit":"contain","background-width":"60%","background-height":"60%",
+          "border-width":1.5, "border-color": ele=>COLORS[ele.data("type")]||COLORS.device,
+          "width":"40px","height":"40px",
+          "label": ele=>{ const l=ele.data("label")||""; return l.length>13 ? l.slice(0,12)+"…" : l; },
+          "color":"#e6eaf0","font-size":"10px","text-valign":"bottom","text-margin-y":5,"text-halign":"center",
+          "text-background-color":"#0a0c10","text-background-opacity":0.9,"text-background-padding":3,"text-background-shape":"roundrectangle",
+          "min-zoomed-font-size":7 }},
+        { selector:'node[type="internet"]', style:{ "width":"62px","height":"62px","border-color":"#5b8cff" }},
+        { selector:'node[type="gateway"],node[type="router"]', style:{ "width":"54px","height":"54px","border-width":2.5 }},
+        { selector:'node[health="warning"]', style:{ "border-color":"#f0a23d","border-width":3 }},
+        { selector:'node[health="critical"]', style:{ "border-color":"#f0506b","border-width":3 }},
+        { selector:'node:selected', style:{ "border-color":"#3dd68c","border-width":3,
+          "label":"data(label)","font-size":"12px" }},
+        { selector:"node:active", style:{ "overlay-opacity":0.1,"overlay-color":"#3dd68c" }},
+        { selector:"edge", style:{ "width":1,"line-color":"#2d3d52","curve-style":"straight","opacity":1 }},
+        { selector:'edge[etype="wan"]', style:{ "line-color":"#5b8cff","width":2,"line-style":"dashed","line-dash-pattern":[6,4] }},
       ],
-      layout:{ name:"breadthfirst", roots:"#internet", directed:true, spacingFactor:1.5, padding:30 } });
+      layout });
+    cy.on("tap","node", evt => showTopoDetail(evt.target.data()));
+    cy.on("tap", evt => { if (evt.target === cy) hideTopoDetail(); });
   } else {
     cy.json({ elements });
-    cy.layout({ name:"breadthfirst", roots:"#internet", directed:true, spacingFactor:1.5, padding:30 }).run();
+    cy.layout(layout).run();
   }
 }
+
+function showTopoDetail(d){
+  const p = document.getElementById("topo-detail");
+  const col = COLORS[d.type] || COLORS.device;
+  document.getElementById("td-type").textContent = d.type || "device";
+  document.getElementById("td-type").style.color = col;
+  document.getElementById("td-label").textContent = d.label || d.id;
+  document.getElementById("td-health").innerHTML = d.health ? '<span class="badge '+d.health+'">'+d.health+'</span>' : '';
+  const f = [["IP",d.ip],["MAC",d.mac],["NIC vendor",d.vendor],["Last seen",(d.last_seen||"").replace("T"," ").replace("Z","")]];
+  document.getElementById("td-fields").innerHTML = f.map(([k,v]) =>
+    '<div><div style="font-size:10px;color:#7a8596;margin-bottom:2px">'+k+'</div><div class="mono" style="font-size:12px">'+(v||"—")+'</div></div>').join("");
+  p.style.display="block";
+}
+function hideTopoDetail(){ document.getElementById("topo-detail").style.display="none"; }
 
 async function loadAlerts(){
   const al = await (await fetch("/v1/alerts",{cache:"no-store"})).json();
