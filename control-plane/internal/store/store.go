@@ -138,7 +138,34 @@ CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts(status, hostname, kind);
 	if err != nil {
 		return fmt.Errorf("init schema: %w", err)
 	}
+	// Migrations for DBs created before a column existed. CREATE TABLE IF NOT
+	// EXISTS never alters an existing table, so a persistent volume from an
+	// older build keeps the old shape (this is what broke telemetry inserts on
+	// zmfbot: "table telemetry has no column named disk_usage_pct").
+	s.ensureColumn("telemetry", "disk_usage_pct", "REAL")
 	return nil
+}
+
+// ensureColumn adds a column if the table lacks it. Idempotent and best-effort:
+// inspects PRAGMA table_info and only ALTERs when missing.
+func (s *SQLiteStore) ensureColumn(table, column, typ string) {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return
+		}
+		if name == column {
+			return // already present
+		}
+	}
+	_, _ = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, typ))
 }
 
 func (s *SQLiteStore) SaveScan(ctx context.Context, scan model.NetworkScan) error {
